@@ -1,0 +1,79 @@
+{
+  "feature_schema": {
+    "version": "2.0",
+    "reference_currency": "USD",
+    "fx_cache_ttl_sec": 900,
+    "numeric_features": [
+      {"name": "tx_amount_usd",      "dtype": "float32", "range": [0, 1000000000], "note": "FX-converted to USD at edge; replaces tx_amount"},
+      {"name": "tx_count_1h",        "dtype": "int32",   "range": [0, 500]},
+      {"name": "tx_count_24h",       "dtype": "int32",   "range": [0, 5000]},
+      {"name": "tx_volume_1h_usd",   "dtype": "float32", "range": [0, 500000000],  "note": "Rolling window on tx_amount_usd; replaces tx_volume_1h"},
+      {"name": "tx_volume_24h_usd",  "dtype": "float32", "range": [0, 5000000000], "note": "Rolling window on tx_amount_usd; replaces tx_volume_24h"},
+      {"name": "merchant_cat_dev",   "dtype": "float32", "range": [-5, 5]},
+      {"name": "geo_velocity_kmh",   "dtype": "float32", "range": [0, 2000]},
+      {"name": "days_since_last_tx", "dtype": "float32", "range": [0, 365]},
+      {"name": "account_age_days",   "dtype": "int32",   "range": [0, 10000]}
+    ],
+    "passthrough_features": [
+      {"name": "hour_of_day_local",  "dtype": "int8",   "range": [0, 23],    "note": "Resolved via BIN country → IANA tz; replaces hour_of_day"},
+      {"name": "day_of_week",        "dtype": "int8",   "range": [0, 6],     "note": "UTC; weekly patterns are tz-insensitive"},
+      {"name": "is_weekend_local",   "dtype": "int8",   "values": [0, 1],    "note": "Sat/Sun in cardholder local time"},
+      {"name": "is_biz_hours_local", "dtype": "int8",   "values": [0, 1],    "note": "09:00–17:00 Mon–Fri in local time"},
+      {"name": "orig_currency",      "dtype": "str",    "format": "ISO 4217","note": "Not a model input; used for drift bucketing only"},
+      {"name": "stale_fx_flag",      "dtype": "int8",   "values": [0, 1],    "note": "1 = FX rate older than fx_cache_ttl_sec at inference time"}
+    ],
+    "label": {
+      "name": "is_fraud",
+      "dtype": "int8",
+      "values": [0, 1]
+    },
+    "total_features": 13,
+    "feature_order": [
+      "tx_amount_usd",
+      "tx_count_1h",
+      "tx_count_24h",
+      "tx_volume_1h_usd",
+      "tx_volume_24h_usd",
+      "merchant_cat_dev",
+      "geo_velocity_kmh",
+      "days_since_last_tx",
+      "account_age_days",
+      "hour_of_day_local",
+      "day_of_week",
+      "is_weekend_local",
+      "is_biz_hours_local"
+    ],
+    "passthrough_only": [
+      "orig_currency",
+      "stale_fx_flag"
+    ]
+  },
+  "model_output": {
+    "fraud_probability": {"dtype": "float32", "range": [0.0, 1.0]},
+    "prediction":        {"dtype": "int8",    "threshold": 0.5, "values": {"1": "fraud", "0": "legit"}},
+    "stale_fx_flag":     {"dtype": "int8",    "note": "Propagated from input; downstream systems may choose to flag or quarantine predictions where stale_fx_flag=1"}
+  },
+  "drift_report": {
+    "timestamp":          "ISO8601 UTC string",
+    "feature_psi":        "dict[feature_name -> float]",
+    "feature_ks_pval":    "dict[feature_name -> float]",
+    "per_currency_psi":   "dict[ISO4217_code -> float]",
+    "severity":           "enum: INFO | WARNING | CRITICAL",
+    "triggered_features": "list[feature_name]",
+    "score_shift":        "float, prediction score distribution shift",
+    "stale_fx_rate":      "float, fraction of inferences in window where stale_fx_flag=1"
+  },
+  "edge_node": {
+    "fx_resolution": {
+      "method":   "BIN country lookup → ECB / open exchange rates API",
+      "cache_ttl_sec": 900,
+      "fallback": "last_known_rate",
+      "on_stale": "set stale_fx_flag=1, proceed with last known rate"
+    },
+    "tz_resolution": {
+      "primary":  "BIN country → IANA timezone (pytz / tzdata)",
+      "fallback": "merchant_country",
+      "final_fallback": "UTC"
+    }
+  }
+}
