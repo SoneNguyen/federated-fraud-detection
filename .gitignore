@@ -1,0 +1,23 @@
+# Environments
+.venv/
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Checkpoints (Don't commit large datasets or model weights!)
+data/raw/*
+data/processed/*
+checkpoints/*
+!data/raw/.gitkeep      # (Optional) Keeps the empty folder in git
+!data/processed/.gitkeep
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/

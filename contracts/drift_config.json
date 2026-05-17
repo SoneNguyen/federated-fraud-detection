@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "statistical_tests": {
+    "psi": {
+      "warning_threshold": 0.1,
+      "critical_threshold": 0.2,
+      "description": "PSI > 0.1 indicates minor shift, > 0.2 is a significant distribution shift."
+    },
+    "ks_test": {
+      "p_value_threshold": 0.05,
+      "description": "If p-value < 0.05, the distributions are statistically significantly different."
+    }
+  },
+  "global_metrics": {
+    "score_shift_warning": 0.05,
+    "score_shift_critical": 0.15,
+    "max_stale_fx_rate_percent": 5.0
+  },
+  "feature_overrides": {
+    "tx_amount_usd": {
+      "psi_critical_threshold": 0.15
+    }
+  }
+}

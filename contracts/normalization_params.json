@@ -1,0 +1,14 @@
+{
+  "method": "z-score",
+  "features": {
+    "tx_amount_usd":     { "mean": 150.50, "std": 450.20 },
+    "tx_count_1h":       { "mean": 1.2,    "std": 0.8 },
+    "tx_count_24h":      { "mean": 3.5,    "std": 2.1 },
+    "tx_volume_1h_usd":  { "mean": 200.00, "std": 600.00 },
+    "tx_volume_24h_usd": { "mean": 450.00, "std": 1200.00 },
+    "merchant_cat_dev":  { "mean": 0.0,    "std": 1.5 },
+    "geo_velocity_kmh":  { "mean": 15.0,   "std": 150.0 },
+    "days_since_last_tx":{ "mean": 12.5,   "std": 30.0 },
+    "account_age_days":  { "mean": 850.0,  "std": 600.0 }
+  }
+}
