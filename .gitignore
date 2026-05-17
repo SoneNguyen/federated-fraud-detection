@@ -9,9 +9,9 @@ __pycache__/
 *$py.class
 
 # Data & Checkpoints (Don't commit large datasets or model weights!)
-data/raw/*
-data/processed/*
-checkpoints/*
+data/raw/
+data/processed/
+checkpoints/
 !data/raw/.gitkeep      # (Optional) Keeps the empty folder in git
 !data/processed/.gitkeep
 
