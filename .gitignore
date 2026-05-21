@@ -7,13 +7,19 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
-# Data & Checkpoints (Don't commit large datasets or model weights!)
+# Data & Checkpoints 
 data/raw/
 data/processed/
 checkpoints/
 !data/raw/.gitkeep      # (Optional) Keeps the empty folder in git
 !data/processed/.gitkeep
+
+# Local python environment files
+.python-version
+*.egg-info/
+status-cleanup.txt
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
@@ -21,3 +27,21 @@ checkpoints/
 # IDEs
 .vscode/
 .idea/
+
+# Build & Distribution
+dist/
+build/
+*.egg-info/
+
+# Output & Results
+results/
+*.log
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# OS Files
+.DS_Store
+Thumbs.db
