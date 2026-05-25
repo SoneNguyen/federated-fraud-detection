@@ -15,20 +15,24 @@ class PredictionDriftReport:
     severity:             str
 
 class PredictionMonitor:
-    WARMUP=1000; WINDOW=200; WARN=0.05; CRIT=0.15
+    WARMUP = 1000
+    WINDOW = 200
+    WARN = 0.05
+    CRIT = 0.15
 
     def __init__(self):
-        self.adwin=ADWIN(delta=0.002)
-        self._warmup=[]; self._ref_mean=None
-        self._recent=deque(maxlen=self.WINDOW)
+        self.adwin = ADWIN(delta=0.002)
+        self._warmup: list[float] = []
+        self._ref_mean: Optional[float] = None
+        self._recent: deque[float] = deque(maxlen=self.WINDOW)
 
-    def update(self, prob:float)->Optional[PredictionDriftReport]:
+    def update(self, prob: float) -> Optional[PredictionDriftReport]:
         self._recent.append(prob)
-        adwin_drift=self.adwin.update(prob)
+        adwin_drift = bool(self.adwin.update(prob))
         if self._ref_mean is None:
             self._warmup.append(prob)
-            if len(self._warmup)>=self.WARMUP:
-                self._ref_mean=sum(self._warmup)/len(self._warmup)
+            if len(self._warmup) >= self.WARMUP:
+                self._ref_mean = sum(self._warmup) / len(self._warmup)
             return None
         if len(self._recent)<self.WINDOW: return None
         rm=sum(self._recent)/len(self._recent)

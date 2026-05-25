@@ -13,7 +13,7 @@ __pycache__/
 data/raw/
 data/processed/
 checkpoints/
-!data/raw/.gitkeep      # (Optional) Keeps the empty folder in git
+!data/raw/.gitkeep      # Keeps the empty folder in git
 !data/processed/.gitkeep
 
 # Local python environment files
@@ -44,4 +44,4 @@ results/
 
 # OS Files
 .DS_Store
-Thumbs.db
+Thumbs.dbgit diff --name-only
