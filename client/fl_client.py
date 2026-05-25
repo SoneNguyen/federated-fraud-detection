@@ -9,7 +9,7 @@ class FraudClient(NumPyClient):
         self.train_loader = train_loader
         self.val_loader = val_loader
 
-    def get_parameters(self, config: dict) -> list[np.ndarray]:
+    def get_parameters(self, config: dict = {}) -> list[np.ndarray]:
         return [val.cpu().numpy() for _, val in self.model.state_dict().items()]
 
     def set_parameters(self, parameters: list[np.ndarray]) -> None:
@@ -32,7 +32,7 @@ class FraudClient(NumPyClient):
             loss.backward()
             optimizer.step()
 
-        return self.get_parameters(config={}), len(self.train_loader.dataset), {}
+        return self.get_parameters(), len(self.train_loader.dataset), {}
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
