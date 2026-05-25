@@ -1,3 +1,7 @@
+# This module contains unit tests for the gen_rows function in the data.generate_synthetic module.
+# The tests verify that the generated rows contain the expected columns, that the lengths of the generated
+# columns are correct, that the fraud flag is correctly set to 0 or 1 based on the input, and that the original currency matches the specified client currency.
+
 import unittest
 import numpy as np
 

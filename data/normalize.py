@@ -1,5 +1,8 @@
-# data/normalize.py
-# normalize numeric features across all client datasets
+# This module computes global normalization parameters (mean and std) for the numeric features across all clients' transaction data, 
+# and then applies these parameters to normalize the features in each client's dataset. The normalized datasets are saved in a new directory for further use in model training and evaluation. 
+# The module ensures that the normalization is consistent across clients, which is crucial for federated learning scenarios where models are trained on decentralized data. 
+# Assertions are included to verify that the normalization process has been successful by checking the mean of a key feature after normalization.
+
 import json
 from pathlib import Path
 

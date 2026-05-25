@@ -1,4 +1,7 @@
-# data/fx/rates.py — static prototype rates (production: replace with ECB API)
+# This module defines static exchange rates for various currencies to USD, 
+# which are used in the synthetic data generation process. 
+# The rates are based on recent market values and are intended to provide a realistic conversion for the transaction amounts in the generated dataset. 
+# The client home currencies are also defined, matching the synthetic data generation setup, to ensure consistency in the currency used for each client's transactions.
 # Last updated: 2024-05-13 — all rates to USD
 STATIC_RATES = {
     "USD": 1.000,

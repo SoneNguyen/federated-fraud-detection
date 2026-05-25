@@ -1,3 +1,4 @@
+# this file defines the pydantic schemas for the API inputs and outputs, as well as the expected feature order for the model.
 from pydantic import BaseModel, field_validator
 from typing import Optional
 

@@ -1,5 +1,7 @@
-# client/dataset.py
-# simple data loader for the fraud detection model
+# This module implements the FraudDataset class, which is a PyTorch Dataset for loading and preprocessing the fraud detection data.
+# It reads the data from a Parquet file, extracts the features and labels based on the provided schema, 
+# and creates DataLoaders for training and validation.
+
 import torch, pandas as pd, json
 from torch.utils.data import Dataset, DataLoader
 

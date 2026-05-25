@@ -1,3 +1,7 @@
+# This module contains unit tests for the Pydantic schemas defined in the api.schemas module.
+# The tests verify that the Transaction schema correctly validates valid input and raises ValidationError for invalid input,
+# and that the Prediction schema correctly validates valid input and contains the expected values for the metadata.
+
 import unittest
 from pydantic import ValidationError
 

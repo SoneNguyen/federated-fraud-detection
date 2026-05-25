@@ -1,4 +1,5 @@
-# data/fx/converter.py
+# This module defines the FXConverter class, which provides functionality to convert amounts from various currencies to USD using predefined exchange rates. The class also includes a mechanism to determine if the exchange rates are stale based on a configurable time-to-live (TTL) value.
+#  The module includes a simple unit test to verify the correctness of the conversion logic and the handling of stale rates.
 from pathlib import Path
 import sys
 import time, json

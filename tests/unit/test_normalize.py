@@ -1,3 +1,6 @@
+#   This module contains unit tests for the local_stats function in the data.normalize module.
+#   The tests verify that the function correctly computes the count, sum, and sum of squares
+#   for a given DataFrame of numeric columns. The test uses a simple DataFrame with known values to check the correctness of the computed statistics.
 import unittest
 import pandas as pd
 

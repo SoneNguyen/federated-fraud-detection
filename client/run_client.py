@@ -1,3 +1,6 @@
+# This script runs the federated learning client. 
+# It loads the local dataset, initializes the model and the client, and starts the client to connect to the server for training.
+# The client ID, server address, data path, and local epochs can be configured via environment variables.
 import os
 from flwr.client import start_numpy_client
 from client.model import FraudMLP

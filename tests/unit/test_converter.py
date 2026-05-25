@@ -1,3 +1,7 @@
+# This module contains unit tests for the FXConverter class in the data.fx.converter module.
+# The tests verify that the to_usd method returns the correct converted amount and stale flag for
+# a known currency, that it falls back to a rate of 1.0 for unknown currencies without crashing, 
+# and that the FX_CACHE_TTL variable is correctly read from the schema.json file.
 import unittest
 import json
 from data.fx.converter import FXConverter, FX_CACHE_TTL

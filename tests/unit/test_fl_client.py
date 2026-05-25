@@ -1,3 +1,6 @@
+# This module contains unit tests for the FraudClient class in the client.fl_client module.
+# The tests verify that the get_parameters and set_parameters methods work correctly, that the fit method returns the correct number of examples,
+# and that the evaluate method returns a loss value and the correct number of evaluation examples.
 import unittest
 
 import torch

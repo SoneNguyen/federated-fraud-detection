@@ -1,3 +1,6 @@
+# This module implements the FraudClient class, which is a Flower client for federated learning.
+# The client loads the local dataset, initializes the model, and implements the required methods for parameter
+# exchange, training, and evaluation. The client connects to the server to participate in the federated learning process.
 from flwr.client import NumPyClient
 import numpy as np
 import torch

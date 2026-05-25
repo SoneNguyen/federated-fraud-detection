@@ -1,3 +1,7 @@
+# This module implements the WeightedFedAvg strategy for federated learning.
+# It extends the FedAvg strategy from Flower and overrides the aggregate_fit method to perform a weighted average of the client updates based 
+#  on the number of samples each client has.
+#  The strategy also logs the number of clients and total samples used in each round to MLflow.
 import json
 import numpy as np
 import mlflow

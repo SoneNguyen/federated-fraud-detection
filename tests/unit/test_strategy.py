@@ -1,3 +1,7 @@
+# This module contains unit tests for the WeightedFedAvg strategy defined in the server.strategy module.
+# The tests verify that the aggregate_fit method correctly aggregates client updates into a single Parameters object,
+# that the logged metrics are correct, and that the method handles edge cases such as too few clients appropriately.
+
 import unittest
 from unittest.mock import patch
 from typing import cast

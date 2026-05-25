@@ -1,4 +1,9 @@
-# data/generate_synthetic.py
+# This module generates synthetic transaction data for multiple clients with varying fraud rates, 
+# currencies, and time zones. The generated data includes 11 features relevant to fraud detection,
+# as well as metadata such as the original currency and a flag for stale exchange rates. 
+# The data is saved in Parquet format for each client, and assertions are included to ensure the integrity of the generated dataset. 
+# The FXConverter is used to convert transaction amounts to USD based on predefined exchange rates, and the timestamps are generated in UTC and converted to local time for feature extraction.
+
 from pathlib import Path
 import sys
 from datetime import datetime, timezone

@@ -1,3 +1,6 @@
+# This module implements a prediction monitor that detects drift in the predicted probabilities of a model.
+#  It uses the ADWIN algorithm for drift detection and maintains a reference mean of the predicted probabilities to compare against recent predictions. 
+# The monitor provides a report with the drift status, score shift, and severity level.
 from river.drift import ADWIN
 from collections import deque
 from datetime import datetime, timezone

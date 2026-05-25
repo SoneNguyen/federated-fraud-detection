@@ -1,3 +1,6 @@
+# This module defines the FraudMLP model architecture for fraud detection. 
+# It loads the input dimension from a JSON schema and constructs a multi-layer perceptron with batch normalization, dropout, and ReLU activations.
+#  The model outputs a single probability value indicating the likelihood of fraud. A smoke test is included to verify the model's output shape.
 import json, torch, torch.nn as nn
 
 with open("contracts/schema.json") as f:

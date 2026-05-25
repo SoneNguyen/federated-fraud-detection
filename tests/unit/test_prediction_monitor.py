@@ -1,3 +1,7 @@
+#  This module contains unit tests for the PredictionMonitor class in the drift.prediction_monitor module.
+#  The tests verify that the update method returns a PredictionDriftReport after the warmup and window periods, 
+#  and that the report contains the expected values for drift detection, severity, and mean scores.
+
 import unittest
 from typing import cast
 
