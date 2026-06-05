@@ -14,8 +14,10 @@ INPUT_DIM = _s["feature_schema"]["total_features"]  # 11
 
 class WeightedFedAvg(FedAvg):
     def aggregate_fit(self, server_round, results, failures):
+        if failures:
+            print(f"[Round {server_round}] {len(failures)} clients failed — continuing with {len(results)}")
         if len(results) < 2:
-            print(f"[Round {server_round}] Too few clients — skip")
+            print(f"[Round {server_round}] Too few clients — skipping aggregation")
             return None, {}
 
         total = sum(r.num_examples for _, r in results)

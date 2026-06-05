@@ -39,6 +39,17 @@ class FeatureMonitor:
         Path("data/drift_ref").mkdir(exist_ok=True)
         self.ref.to_parquet("data/drift_ref/reference_window.parquet", index=False)
 
+    @classmethod
+    def from_disk(cls, path: Path | str = "data/drift_ref/reference_window.parquet") -> "FeatureMonitor":
+        reference_path = Path(path)
+        if not reference_path.exists():
+            raise FileNotFoundError(f"Reference file not found: {reference_path}")
+
+        reference_df = pd.read_parquet(reference_path)
+        obj = object.__new__(cls)
+        obj.ref = reference_df[NUMERIC].copy()
+        return obj
+
     def check(self, current_df: pd.DataFrame) -> DriftReport:
         psi_s, ks_s, triggered = {}, {}, []
         for feat in NUMERIC:

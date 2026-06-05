@@ -1,0 +1,11 @@
+prometheus:
+    image: prom/prometheus:latest
+    ports: ["9091:9090"]
+    volumes: ["./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml"]
+    networks: [fraud-net]
+
+grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]
+    volumes: ["./monitoring/grafana_dashboards:/var/lib/grafana/dashboards"]
+    networks: [fraud-net]
