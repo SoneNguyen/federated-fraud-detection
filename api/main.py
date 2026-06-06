@@ -1,0 +1,148 @@
+"""FastAPI inference gateway for the Federated Fraud Detection model.
+
+Endpoints:
+    GET  /health          — liveness check
+    POST /predict         — score a single transaction
+    POST /reload          — hot-reload the latest model checkpoint
+    GET  /model-version   — return the currently loaded checkpoint name
+"""
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Optional
+
+import torch
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+
+from api.middleware import AccessLogMiddleware, RateLimitMiddleware
+from api.schemas import FEATURE_ORDER, Prediction, PredictionMetadata, Transaction
+from client.model import FraudMLP
+
+logger = logging.getLogger("api.main")
+
+app = FastAPI(title="Fraud Detection API", version="1.0.0")
+app.add_middleware(AccessLogMiddleware)
+app.add_middleware(RateLimitMiddleware, max_requests=1000, window_seconds=60)
+
+# ── module-level state ────────────────────────────────────────────────────────
+_model: Optional[FraudMLP] = None
+_norm_params: dict = {}
+_model_version: str = "not_loaded"
+
+CHECKPOINT_DIR   = Path("checkpoints")
+NORM_PARAMS_PATH = Path("contracts/normalization_params.json")
+NUMERIC_COLS     = [
+    "tx_amount_usd", "tx_count_1h", "tx_count_24h",
+    "tx_volume_1h_usd", "tx_volume_24h_usd", "merchant_cat_dev",
+    "geo_velocity_kmh", "days_since_last_tx", "account_age_days",
+]
+
+
+def _load_latest_model() -> tuple[FraudMLP, dict, str]:
+    """Find the latest checkpoint, load weights, and return model + norm params + version."""
+    checkpoints = sorted(CHECKPOINT_DIR.glob("*.pt"))
+    # Exclude rollback file from version selection
+    checkpoints = [c for c in checkpoints if c.name != "rollback_active.pt"]
+
+    if not checkpoints:
+        raise FileNotFoundError(
+            f"No checkpoints found in {CHECKPOINT_DIR.resolve()}. "
+            "Run FL training first."
+        )
+
+    latest = max(checkpoints, key=lambda p: p.stat().st_mtime)
+    model = FraudMLP()
+    model.load_state_dict(torch.load(latest, map_location="cpu"))
+    model.eval()
+
+    if not NORM_PARAMS_PATH.exists():
+        raise FileNotFoundError(
+            f"Normalization params not found at {NORM_PARAMS_PATH}. "
+            "Run data/normalize.py first."
+        )
+    with open(NORM_PARAMS_PATH) as f:
+        norm = json.load(f)
+
+    logger.info("Loaded model checkpoint: %s", latest.name)
+    return model, norm, latest.stem
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    global _model, _norm_params, _model_version
+    try:
+        _model, _norm_params, _model_version = _load_latest_model()
+    except FileNotFoundError as e:
+        # Allow the API to start without a checkpoint — /predict will return 503
+        logger.warning("Startup: %s", e)
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "model_version": _model_version}
+
+
+@app.get("/model-version")
+async def model_version() -> dict:
+    return {"model_version": _model_version}
+
+
+@app.post("/reload")
+async def reload() -> dict:
+    """Hot-reload the latest checkpoint from disk (called after rollback)."""
+    global _model, _norm_params, _model_version
+    try:
+        _model, _norm_params, _model_version = _load_latest_model()
+        return {"status": "reloaded", "model_version": _model_version}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/predict", response_model=Prediction)
+async def predict(tx: Transaction) -> Prediction:
+    if _model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Check that training has completed and "
+                   "a checkpoint exists in the checkpoints/ directory.",
+        )
+
+    # Build feature vector in schema-defined order
+    raw_vals: dict[str, float] = {
+        "tx_amount_usd":      tx.tx_amount_usd,
+        "tx_count_1h":        tx.tx_count_1h,
+        "tx_count_24h":       tx.tx_count_24h,
+        "tx_volume_1h_usd":   tx.tx_volume_1h_usd,
+        "tx_volume_24h_usd":  tx.tx_volume_24h_usd,
+        "merchant_cat_dev":   tx.merchant_cat_dev,
+        "geo_velocity_kmh":   tx.geo_velocity_kmh,
+        "days_since_last_tx": tx.days_since_last_tx,
+        "account_age_days":   tx.account_age_days,
+        "hour_of_day_local":  tx.hour_of_day_local,
+        "day_of_week":        tx.day_of_week,
+    }
+
+    # Normalize numeric features using federated global stats
+    features: list[float] = []
+    for col in FEATURE_ORDER:
+        v = float(raw_vals[col])
+        if col in _norm_params:
+            v = (v - _norm_params[col]["mean"]) / _norm_params[col]["std"]
+        features.append(v)
+
+    x = torch.tensor([features], dtype=torch.float32)
+    with torch.no_grad():
+        prob = float(_model(x).squeeze())
+
+    return Prediction(
+        fraud_probability=round(prob, 6),
+        prediction=int(prob >= 0.5),
+        model_version=_model_version,
+        metadata=PredictionMetadata(
+            stale_fx_flag=tx.stale_fx_flag or 0,
+            orig_currency=tx.orig_currency or "USD",
+        ),
+    )
