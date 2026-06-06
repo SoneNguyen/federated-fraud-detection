@@ -1,12 +1,14 @@
-# This module implements the FraudClient class, which is a Flower client for federated learning.
-# The client loads the local dataset, initializes the model, and implements the required methods for parameter
-# exchange, training, and evaluation. The client connects to the server to participate in the federated learning process.
 from flwr.client import NumPyClient
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 
 class FraudClient(NumPyClient):
+    # Fraud rate is ~1-3.5% across clients — weight positive class heavily
+    # so the model doesn't collapse to always predicting "not fraud"
+    FRAUD_WEIGHT = 80.0
+
     def __init__(self, model: torch.nn.Module, train_loader, val_loader):
         self.model = model
         self.train_loader = train_loader
@@ -25,31 +27,44 @@ class FraudClient(NumPyClient):
         self.set_parameters(parameters)
         self.model.train()
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=float(config.get("lr", 1e-3))
+            self.model.parameters(),
+            lr=float(config.get("lr", 1e-3)),
+            weight_decay=1e-5,
         )
-        loss_fn = torch.nn.BCELoss()
+        epochs = int(config.get("local_epochs", 5))
 
-        for X, y in self.train_loader:
-            optimizer.zero_grad()
-            loss = loss_fn(self.model(X).squeeze(), y)
-            loss.backward()
-            optimizer.step()
+        for _ in range(epochs):
+            for X, y in self.train_loader:
+                optimizer.zero_grad()
+                pred = self.model(X).squeeze()
+                # Per-sample weighted BCE — critical for class imbalance
+                # fraud samples get 80x more gradient signal than legit ones
+                bce = F.binary_cross_entropy(pred, y, reduction="none")
+                weights = torch.where(
+                    y == 1,
+                    torch.full_like(y, self.FRAUD_WEIGHT),
+                    torch.ones_like(y),
+                )
+                loss = (bce * weights).mean()
+                loss.backward()
+                optimizer.step()
 
         return self.get_parameters(), len(self.train_loader.dataset), {}
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
         self.model.eval()
-        loss_fn = torch.nn.BCELoss()
         total_loss, total_examples = 0.0, 0
 
         with torch.no_grad():
             for X, y in self.val_loader:
-                loss = loss_fn(self.model(X).squeeze(), y)
-                total_loss += loss.item() * X.shape[0]
+                pred = self.model(X).squeeze()
+                loss = F.binary_cross_entropy(pred, y, reduction="sum")
+                total_loss += loss.item()
                 total_examples += X.shape[0]
 
-        return float(total_loss / total_examples), len(self.val_loader.dataset), {}
+        avg_loss = total_loss / max(total_examples, 1)
+        return float(avg_loss), total_examples, {"val_loss": avg_loss}
 
 
 __all__ = ["FraudClient"]
