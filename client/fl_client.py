@@ -1,3 +1,6 @@
+from collections.abc import Sized
+from typing import cast
+
 from flwr.client import NumPyClient
 import numpy as np
 import torch
@@ -49,7 +52,7 @@ class FraudClient(NumPyClient):
                 loss.backward()
                 optimizer.step()
 
-        return self.get_parameters(), len(self.train_loader.dataset), {}
+        return self.get_parameters(), len(cast(Sized, self.train_loader.dataset)), {}
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)

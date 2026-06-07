@@ -3,7 +3,7 @@ import pandas as pd
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 from scipy import stats
 from pathlib import Path
 
@@ -76,7 +76,7 @@ class FeatureMonitor:
             stale_rate = float(current_df["stale_fx_flag"].mean())
             
         return DriftReport(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             feature_psi=psi_s, 
             feature_ks_pval=ks_s,
             severity=sev, 

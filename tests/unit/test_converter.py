@@ -4,6 +4,7 @@
 # and that the FX_CACHE_TTL variable is correctly read from the schema.json file.
 import unittest
 import json
+import time
 from data.fx.converter import FXConverter, FX_CACHE_TTL
 
 class TestFXConverter(unittest.TestCase):
@@ -41,6 +42,24 @@ class TestFXConverter(unittest.TestCase):
             expected_ttl = schema_data["feature_schema"]["fx_cache_ttl_sec"]
             
         self.assertEqual(FX_CACHE_TTL, expected_ttl)
+
+    def test_is_stale_fresh_cache(self):
+        """Test 4: is_stale() returns False when cache is fresh"""
+        fx = FXConverter(rates=self.mock_rates, cache_ts=time.time())
+        self.assertFalse(fx.is_stale())
+
+    def test_is_stale_old_cache(self):
+        """Test 5: is_stale() returns True when cache exceeds TTL"""
+        old_ts = time.time() - (FX_CACHE_TTL + 100)
+        fx = FXConverter(rates=self.mock_rates, cache_ts=old_ts)
+        self.assertTrue(fx.is_stale())
+
+    def test_stale_flag_in_to_usd(self):
+        """Test 6: to_usd() returns stale flag=1 when cache is old"""
+        old_ts = time.time() - (FX_CACHE_TTL + 50)
+        fx = FXConverter(rates=self.mock_rates, cache_ts=old_ts)
+        usd, stale = fx.to_usd(100.0, "EUR")
+        self.assertEqual(stale, 1)
 
 if __name__ == "__main__":
     unittest.main()

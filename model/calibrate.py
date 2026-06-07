@@ -30,6 +30,7 @@ def get_raw_scores(model: torch.nn.Module, parquet_path: str,
     import pandas as pd
 
     df = pd.read_parquet(parquet_path)
+    df = df.sample(frac=1, random_state=0).reset_index(drop=True)
     n = len(df)
     split = int(n * (1 - val_split))
     val_df = df.iloc[split:].reset_index(drop=True)

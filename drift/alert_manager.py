@@ -1,7 +1,7 @@
 import requests
 import json
 from typing import Optional 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from drift.detectors import DriftReport
@@ -46,7 +46,7 @@ class AlertManager:
 
     def _log(self, sev, feat, pred):
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "severity": sev,
             "triggered": feat.triggered_features,
             "max_psi": max(feat.feature_psi.values()),

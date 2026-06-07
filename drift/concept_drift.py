@@ -1,6 +1,6 @@
 # drift/concept_drift.py (unchanged from original plan)
 from collections import deque
-from datetime import datetime
+from datetime import datetime, UTC
 from dataclasses import dataclass
 from typing import Optional
 
@@ -28,7 +28,7 @@ class PseudoLabelMonitor:
         shift = (self.ref-cur)/max(self.ref,1e-8)
         sev = "CRITICAL" if shift>=self.CRIT else "WARNING" if shift>=self.WARN else "INFO"
         return ConceptDriftReport(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             pseudo_positive_rate=round(cur,5),
             reference_positive_rate=round(self.ref,5),
             rate_shift=round(shift,5), severity=sev)

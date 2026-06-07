@@ -2,7 +2,13 @@
 # It reads the data from a Parquet file, extracts the features and labels based on the provided schema, 
 # and creates DataLoaders for training and validation.
 
-import torch, pandas as pd, json
+from __future__ import annotations
+
+import json
+import torch
+import pandas as pd
+from pathlib import Path
+from typing import Tuple
 from torch.utils.data import Dataset, DataLoader
 
 with open("contracts/schema.json") as f:
@@ -23,23 +29,35 @@ class FraudDataset(Dataset):
         df = pd.read_parquet(path)
         missing = [c for c in FEATURE_ORDER + [LABEL] if c not in df.columns]
         assert not missing, f"Missing columns: {missing}"
-        self.X    = torch.tensor(df[FEATURE_ORDER].values, dtype=torch.float32)
-        self.y    = torch.tensor(df[LABEL].values,         dtype=torch.float32)
+        self.X = torch.tensor(df[FEATURE_ORDER].values, dtype=torch.float32)
+        self.y = torch.tensor(df[LABEL].values, dtype=torch.float32)
         # keep extra columns for drift checks, not model input
         self.meta = df[PASS_ONLY].copy() if all(c in df.columns for c in PASS_ONLY) else None
         print(f"Loaded {len(df):,} rows | fraud={df[LABEL].mean()*100:.2f}% | X.shape={self.X.shape}")
 
-    def __len__(self): return len(self.X)
-    def __getitem__(self, i): return self.X[i], self.y[i]
+    def __len__(self) -> int:
+        return len(self.X)
 
-def make_loaders(path, val_split=0.15, batch_size=256, seed=42):
+    def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.X[i], self.y[i]
+
+def make_loaders(
+    path: str,
+    val_split: float = 0.15,
+    batch_size: int = 256,
+    seed: int = 42,
+) -> tuple[DataLoader, DataLoader]:
     ds = FraudDataset(path)
-    n_val = int(len(ds)*val_split)
+    n_val = int(len(ds) * val_split)
     train_ds, val_ds = torch.utils.data.random_split(
-        ds, [len(ds)-n_val, n_val],
-        generator=torch.Generator().manual_seed(seed))
-    return (DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=2),
-            DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=2))
+        ds,
+        [len(ds) - n_val, n_val],
+        generator=torch.Generator().manual_seed(seed),
+    )
+    return (
+        DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2),
+        DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2),
+    )
 
 if __name__ == "__main__":
     # quick check to verify loader shape and labels

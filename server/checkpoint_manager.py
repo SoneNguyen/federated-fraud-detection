@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +22,7 @@ class CheckpointManager:
 
         if metadata is not None:
             metadata_path = self.checkpoint_dir / f"{name}.json"
-            metadata["saved_at"] = metadata.get("saved_at") or datetime.utcnow().isoformat()
+            metadata["saved_at"] = metadata.get("saved_at") or datetime.now(UTC).isoformat()
             with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f)
 

@@ -1,4 +1,6 @@
 import os
+from collections.abc import Sized
+from typing import Any, cast
 from opacus import PrivacyEngine
 from client.fl_client import FraudClient
 import torch
@@ -25,15 +27,24 @@ class FraudClientDP(FraudClient):
                 self.model.parameters(), lr=1e-3, weight_decay=1e-5
             )
             engine = PrivacyEngine()
-            (self.model,
-             self._dp_optimizer,
-             self.train_loader) = engine.make_private(
-                module=self.model,
-                optimizer=self._dp_optimizer,
-                data_loader=self.train_loader,
-                noise_multiplier=noise_mult,
-                max_grad_norm=max_grad_norm,
+            private_result = cast(
+                tuple[torch.nn.Module, torch.optim.Optimizer, Any],
+                engine.make_private(
+                    module=self.model,
+                    optimizer=self._dp_optimizer,
+                    data_loader=self.train_loader,
+                    noise_multiplier=noise_mult,
+                    max_grad_norm=max_grad_norm,
+                ),
             )
+
+            self.model = cast(torch.nn.Module, private_result[0])
+            self._dp_optimizer = cast(torch.optim.Optimizer, private_result[1])
+            if len(private_result) == 3:
+                self.train_loader = cast(torch.utils.data.DataLoader, private_result[2])
+            else:
+                self.train_loader = cast(torch.utils.data.DataLoader, private_result[3])
+
             self._dp_engine = engine
             print(f"[DP] Privacy engine active: noise={noise_mult}, clip={max_grad_norm}")
         else:
@@ -73,7 +84,7 @@ class FraudClientDP(FraudClient):
                 loss.backward()
                 optimizer.step()
 
-        return self.get_parameters(), len(self.train_loader.dataset), {}
+        return self.get_parameters(), len(cast(Sized, self.train_loader.dataset)), {}
 
     def get_epsilon(self, delta: float = 1e-5) -> float:
         if self._dp_engine is not None:

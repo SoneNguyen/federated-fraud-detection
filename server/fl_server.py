@@ -1,6 +1,6 @@
 import mlflow
 from flwr.server import start_server
-from flwr.server.server import ServerConfig
+from flwr.server.server_config import ServerConfig
 
 from server.strategy import WeightedFedAvg
 
@@ -11,7 +11,7 @@ def main() -> None:
     print("Flower server running")
     start_server(
         server_address="0.0.0.0:8080",
-        config=ServerConfig(num_rounds=10, timeout=100000),
+        config=ServerConfig(num_rounds=10, round_timeout=100000),
         strategy=strategy,
     )
 

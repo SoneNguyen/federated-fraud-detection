@@ -53,10 +53,27 @@ def _load_latest_model() -> tuple[FraudMLP, dict, str]:
             "Run FL training first."
         )
 
-    latest = max(checkpoints, key=lambda p: p.stat().st_mtime)
-    model = FraudMLP()
-    model.load_state_dict(torch.load(latest, map_location="cpu"))
-    model.eval()
+    # Prefer the newest compatible checkpoint. Some checkpoint files may exist
+    # in the directory with the wrong format or partial state dicts.
+    for checkpoint_path in sorted(checkpoints, key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            state_dict = torch.load(checkpoint_path, map_location="cpu")
+            model = FraudMLP()
+            model.load_state_dict(state_dict)
+            model.eval()
+            latest = checkpoint_path
+            break
+        except (RuntimeError, ValueError) as exc:
+            logger.warning(
+                "Skipping incompatible checkpoint %s: %s",
+                checkpoint_path.name,
+                exc,
+            )
+    else:
+        raise FileNotFoundError(
+            f"No compatible checkpoints found in {CHECKPOINT_DIR.resolve()}. "
+            "Ensure the directory contains valid FraudMLP state_dict files."
+        )
 
     if not NORM_PARAMS_PATH.exists():
         raise FileNotFoundError(
