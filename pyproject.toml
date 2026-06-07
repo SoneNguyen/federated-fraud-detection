@@ -17,6 +17,7 @@ dependencies = [
     "river>=0.21.0",
     "six==1.17.0",
     "torch",
+    "opacus>=1.6.0",
     "tzdata==2026.2",
 ]
 
