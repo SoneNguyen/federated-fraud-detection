@@ -14,13 +14,13 @@ from torch.utils.data import Dataset, DataLoader
 
 with open("contracts/schema.json") as f:
     _s = json.load(f)
-FEATURE_ORDER = _s["feature_schema"]["feature_order"]     # 11 items
+FEATURE_ORDER = _s["feature_schema"]["feature_order"]     # 17 items (expanded v4.0)
 LABEL         = _s["feature_schema"]["label"]["name"]     # "is_fraud"
 PASS_ONLY     = [p["name"] for p in _s["feature_schema"]["passthrough_only"]]
 # = ["orig_currency","stale_fx_flag"]
 
 # Hard assertions — fail loudly at import time
-assert len(FEATURE_ORDER) == 11
+assert len(FEATURE_ORDER) == 17
 assert LABEL not in FEATURE_ORDER
 for p in PASS_ONLY:
     assert p not in FEATURE_ORDER, f"{p} must not be in feature_order"
@@ -69,6 +69,6 @@ if __name__ == "__main__":
         p = f"data/processed/client_{i}/transactions_normalized.parquet"
         tl, vl = make_loaders(p)
         X, y = next(iter(tl))
-        assert X.shape[1] == 11, f"Bad feature count: {X.shape[1]}"
+        assert X.shape[1] == 17, f"Bad feature count: {X.shape[1]}"
         assert set(y.unique().tolist()).issubset({0.0,1.0})
         print(f"Client {i}: batch X={X.shape}, y={y.shape} — OK")

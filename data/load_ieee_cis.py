@@ -56,9 +56,53 @@ def engineer(df, tx_ref):
     # Account age proxy — D3 = days since last tx with this card
     out["account_age_days"] = df["D3"].fillna(0).clip(0, 10000).astype("int32")
 
+    # ─── NEW FEATURES (v4.0) - IEEE-CIS Compatible ─────────────────────────────
+    
+    # Device entropy — card-level device diversity using DeviceType and DeviceInfo counts
+    device_type = df["DeviceType"].fillna("unknown").astype(str) if "DeviceType" in df.columns else pd.Series("unknown", index=df.index)
+    device_info = df["DeviceInfo"].fillna("unknown").astype(str) if "DeviceInfo" in df.columns else pd.Series("unknown", index=df.index)
+    card_ids = df["card1"].fillna(-1).astype(str)
+    device_diversity = df.groupby(card_ids)["DeviceInfo"].transform("nunique").replace(0, 1).astype(float)
+    type_diversity = df.groupby(card_ids)["DeviceType"].transform("nunique").replace(0, 1).astype(float)
+    entropy_score = ((device_diversity / device_diversity.max()) * 0.6 + (type_diversity / type_diversity.max()) * 0.4).fillna(0)
+    out["device_entropy"] = entropy_score.clip(0, 1).astype("float32")
+    
+    # Merchant risk score — card brand and product category fraud rate proxy
+    card_brand = tx_ref["Card4"].fillna("unknown").astype(str) if "Card4" in tx_ref.columns else pd.Series("unknown", index=tx_ref.index)
+    prod_card_key = prod_code.astype(str) + "_" + card_brand.astype(str)
+    brand_risk = df.groupby(card_brand)["isFraud"].transform("mean").fillna(0.01)
+    prod_card_risk = df.groupby(prod_card_key)["isFraud"].transform("mean").fillna(0.01)
+    out["merchant_risk_score"] = (0.4 * brand_risk + 0.6 * prod_card_risk).clip(0, 1).astype("float32")
+    
+    # Refund velocity — proxy from D11 time gap (lower gap can indicate rapid activity)
+    if "D11" in df.columns:
+        refund_vel = df["D11"].fillna(100).clip(0, 100).astype(float)
+        out["refund_velocity_7d"] = np.exp(-refund_vel / 7.0).astype("float32")
+    else:
+        out["refund_velocity_7d"] = pd.Series(0.0, index=df.index).astype("float32")
+    
+    # Velocity per merchant — from C3 count feature by card in a time window
+    tx_per_merchant = df["C3"].fillna(0).clip(0, 500).astype(float) if "C3" in df.columns else pd.Series(0.0, index=df.index)
+    out["velocity_per_merchant"] = (tx_per_merchant / 500.0).clip(0, 1).astype("float32")
+    
+    # Is international — from Addr1, Addr2 mismatch (billing vs shipping address)
+    addr1 = df["Addr1"].fillna(0) if "Addr1" in df.columns else pd.Series(0, index=df.index)
+    addr2 = df["Addr2"].fillna(0) if "Addr2" in df.columns else pd.Series(0, index=df.index)
+    addr_mismatch = (addr1 != addr2).astype(int)
+    # Also check distance features for geo-velocity (dist1 > 500 miles = likely intl)
+    dist_intl = (dist > 500).astype(int)
+    out["is_international"] = (addr_mismatch | dist_intl).astype("int8")
+
     # Local hour — TransactionDT is seconds from a reference epoch
     out["hour_of_day_local"] = ((df["TransactionDT"] // 3600) % 24).astype("int8")
     out["day_of_week"]       = ((df["TransactionDT"] // 86400) % 7).astype("int8")
+
+    # Device consistency — consistency score for same card over multiple device observations
+    out["device_consistency"] = (1.0 - out["device_entropy"]).astype("float32")
+    
+    # Device consistency — consistency score for same device across transactions
+    # Proxy: inverse of device entropy (more consistent = lower entropy)
+    out["device_consistency"] = (1.0 - out["device_entropy"]).astype("float32")
 
     # Label
     out[LABEL] = df["isFraud"].astype("int8")
@@ -71,7 +115,7 @@ def engineer(df, tx_ref):
     full_cols = FEATURE_ORDER + ["orig_currency", "stale_fx_flag", LABEL]
     out = out[full_cols].fillna(0)
 
-    assert list(out.columns[:11]) == FEATURE_ORDER, "Column order mismatch"
+    assert list(out.columns[:17]) == FEATURE_ORDER, "Column order mismatch"
     assert out.isnull().sum().sum() == 0, "Nulls found after fillna"
     return out
 

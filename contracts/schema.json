@@ -1,6 +1,6 @@
 {
   "feature_schema": {
-    "version": "3.0",
+    "version": "4.0",
     "reference_currency": "USD",
     "fx_cache_ttl_sec": 900,
     "numeric_features": [
@@ -12,23 +12,31 @@
       {"name":"merchant_cat_dev",    "dtype":"float32","range":[-5,5]},
       {"name":"geo_velocity_kmh",    "dtype":"float32","range":[0,2000]},
       {"name":"days_since_last_tx",  "dtype":"float32","range":[0,365]},
-      {"name":"account_age_days",    "dtype":"int32",  "range":[0,10000]}
+      {"name":"account_age_days",    "dtype":"int32",  "range":[0,10000]},
+      {"name":"device_entropy",      "dtype":"float32","range":[0,1]},
+      {"name":"merchant_risk_score", "dtype":"float32","range":[0,1]},
+      {"name":"refund_velocity_7d",  "dtype":"int32",  "range":[0,100]},
+      {"name":"velocity_per_merchant","dtype":"int32", "range":[0,500]},
+      {"name":"is_international",    "dtype":"int8",  "values":[0,1]}
     ],
     "passthrough_features": [
       {"name":"hour_of_day_local","dtype":"int8","range":[0,23]},
-      {"name":"day_of_week",     "dtype":"int8","range":[0,6]}
+      {"name":"day_of_week",     "dtype":"int8","range":[0,6]},
+      {"name":"device_consistency","dtype":"float32","range":[0,1]}
     ],
     "passthrough_only": [
       {"name":"orig_currency","dtype":"str","format":"ISO 4217"},
       {"name":"stale_fx_flag","dtype":"int8","values":[0,1]}
     ],
     "label":{"name":"is_fraud","dtype":"int8","values":[0,1]},
-    "total_features": 11,
+    "total_features": 17,
     "feature_order": [
       "tx_amount_usd","tx_count_1h","tx_count_24h",
       "tx_volume_1h_usd","tx_volume_24h_usd","merchant_cat_dev",
       "geo_velocity_kmh","days_since_last_tx","account_age_days",
-      "hour_of_day_local","day_of_week"
+      "device_entropy","merchant_risk_score","refund_velocity_7d",
+      "velocity_per_merchant","is_international",
+      "hour_of_day_local","day_of_week","device_consistency"
     ]
   },
   "model_output": {

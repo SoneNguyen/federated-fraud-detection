@@ -1,6 +1,7 @@
 import mlflow
 import torch
 import logging
+import os
 from flwr.server import start_server
 from flwr.server import ServerConfig
 from flwr.common import ndarrays_to_parameters
@@ -69,15 +70,17 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Flower Server Configuration")
     logger.info("=" * 60)
-    logger.info("Server address: 0.0.0.0:8080")
-    logger.info("Number of rounds: 10")
+    num_rounds = int(os.environ.get("NUM_ROUNDS", "15"))
+    server_address = os.environ.get("SERVER_ADDRESS", "localhost:8080")
+    logger.info(f"Server address: {server_address}")
+    logger.info(f"Number of rounds: {num_rounds}")
     logger.info("Round timeout: 100000 seconds")
     logger.info("=" * 60)
     logger.info("Waiting for clients to connect...")
 
     start_server(
-        server_address="0.0.0.0:8080",
-        config=ServerConfig(num_rounds=10, round_timeout=100000),
+        server_address=server_address,
+        config=ServerConfig(num_rounds=num_rounds, round_timeout=100000),
         strategy=strategy,
     )
 

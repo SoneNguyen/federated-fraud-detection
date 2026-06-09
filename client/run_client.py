@@ -29,7 +29,10 @@ def main():
     print(f"  - Val samples: {len(val_l.dataset)}")
     print(f"  - Local epochs: {epochs}")
     
-    client = FraudClient(model, train_l, val_l)
+    local_epochs = int(os.environ.get("LOCAL_EPOCHS", "5"))
+    lr = float(os.environ.get("LOCAL_LR", "1e-3"))
+    weight_decay = float(os.environ.get("WEIGHT_DECAY", "1e-4"))
+    client = FraudClient(model, train_l, val_l, local_epochs=local_epochs, lr=lr, weight_decay=weight_decay)
     print(f"[Client {cid}] Connecting to server at {addr}...")
     start_numpy_client(
         server_address=addr,

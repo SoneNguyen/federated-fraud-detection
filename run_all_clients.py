@@ -45,12 +45,12 @@ def main():
         env["CLIENT_ID"] = str(client_id)
         env["DATA_PATH"] = str(data_path)
         env["SERVER_ADDRESS"] = "localhost:8080"
-        env["LOCAL_EPOCHS"] = "5"
+        env["LOCAL_EPOCHS"] = "10"
         
         # Start client process
         try:
             proc = subprocess.Popen(
-                [sys.executable, "-m", "flwr.client", "client.run_client:main"],
+                [sys.executable, "-m", "client.run_client"],
                 env=env,
                 cwd=PROJECT_ROOT,
             )
@@ -99,9 +99,9 @@ def main():
         if return_code is None:
             status = "Running"
         elif return_code == 0:
-            status = "✓ Completed"
+            status = "[OK] Completed"
         else:
-            status = f"✗ Exit code {return_code}"
+            status = f"[FAIL] Exit code {return_code}"
         print(f"[Client {client_id}] {status}")
 
 if __name__ == "__main__":

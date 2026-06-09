@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 with open("contracts/schema.json") as f:
     _s = json.load(f)
-INPUT_DIM = _s["feature_schema"]["total_features"]  # 11
+INPUT_DIM = _s["feature_schema"]["total_features"]  # 17
 
 
 class WeightedFedAvg(FedAvg):

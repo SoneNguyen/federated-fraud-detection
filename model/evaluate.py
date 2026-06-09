@@ -95,9 +95,34 @@ def run_evaluation():
             "No federated checkpoint files found in checkpoints/round_*.pt. "
             "Please run training or populate the checkpoints directory before evaluation."
         )
-    fl_ckpt = fl_ckpts[-1]
+
     fl_model = FraudMLP(device=str(device))
-    fl_model.load_state_dict(torch.load(fl_ckpt, map_location=fl_model.device))
+    compatible_ckpt = None
+    expected_shapes = {k: v.shape for k, v in fl_model.state_dict().items()}
+
+    for ckpt_path in reversed(fl_ckpts):
+        try:
+            state = torch.load(ckpt_path, map_location="cpu")
+        except Exception:
+            continue
+
+        if not isinstance(state, dict):
+            continue
+
+        if set(state.keys()) != set(expected_shapes.keys()):
+            continue
+
+        if all(state[k].shape == expected_shapes[k] for k in expected_shapes):
+            compatible_ckpt = ckpt_path
+            break
+
+    if compatible_ckpt is None:
+        raise RuntimeError(
+            "No compatible federated checkpoint found for the current model architecture. "
+            "Please retrain the model using the current schema and architecture."
+        )
+
+    fl_model.load_state_dict(torch.load(compatible_ckpt, map_location=fl_model.device))
     results["federated"] = evaluate(fl_model, X_test, y_test)
 
     # 2. Local-only baseline (train on client_0 only, no federation)

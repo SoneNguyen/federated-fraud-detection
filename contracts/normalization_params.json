@@ -34,5 +34,25 @@
   "account_age_days": {
     "mean": 15.726349,
     "std": 48.557321
+  },
+  "device_entropy": {
+    "mean": 0.411236,
+    "std": 0.132605
+  },
+  "merchant_risk_score": {
+    "mean": 0.03499,
+    "std": 0.018564
+  },
+  "refund_velocity_7d": {
+    "mean": 0.20795,
+    "std": 0.396197
+  },
+  "velocity_per_merchant": {
+    "mean": 1.1e-05,
+    "std": 0.000301
+  },
+  "is_international": {
+    "mean": 0.030809,
+    "std": 0.1728
   }
 }
