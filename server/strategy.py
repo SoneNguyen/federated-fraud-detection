@@ -1,4 +1,5 @@
 import json
+import logging
 import numpy as np
 import mlflow
 import torch
@@ -9,6 +10,14 @@ from typing import Optional
 
 from client.model import FraudMLP
 from server.checkpoint_manager import CheckpointManager
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 with open("contracts/schema.json") as f:
     _s = json.load(f)
@@ -22,18 +31,20 @@ class WeightedFedAvg(FedAvg):
 
     def aggregate_fit(self, server_round, results, failures):
         if failures:
-            print(f"[Round {server_round}] {len(failures)} clients failed — continuing with {len(results)}")
+            logger.warning(f"[Round {server_round}] {len(failures)} clients failed — continuing with {len(results)}")
         if len(results) < 2:
-            print(f"[Round {server_round}] Too few clients — skipping aggregation")
+            logger.warning(f"[Round {server_round}] Too few clients ({len(results)}) — skipping aggregation")
             return None, {}
 
         total = sum(r.num_examples for _, r in results)
+        logger.info(f"[Round {server_round}] Aggregating {len(results)} clients, {total} total samples")
 
         weighted: list[list[np.ndarray]] = []
-        for _, fit_res in results:
+        for client_id, (_, fit_res) in enumerate(results):
             w = fit_res.num_examples / total
             params: list[np.ndarray] = parameters_to_ndarrays(fit_res.parameters)
             weighted.append([p * w for p in params])
+            logger.debug(f"  Client {client_id}: {fit_res.num_examples} samples, weight={w:.4f}")
 
         agg: list[np.ndarray] = [
             sum((w[i] for w in weighted), np.zeros_like(weighted[0][i]))
@@ -58,9 +69,10 @@ class WeightedFedAvg(FedAvg):
                 "total_samples": total,
             },
         )
-        print(f"[Round {server_round}] Checkpoint saved → {path.name}")
+        logger.info(f"[Round {server_round}] Checkpoint saved → {path.name}")
         # ─────────────────────────────────────────────────────────────────────
 
         mlflow.log_metric("clients", len(results), step=server_round)
-        print(f"[Round {server_round}] {len(results)} clients, {total} samples")
+        mlflow.log_metric("total_samples", total, step=server_round)
+        logger.info(f"[Round {server_round}] Aggregation complete")
         return ndarrays_to_parameters(agg), {}

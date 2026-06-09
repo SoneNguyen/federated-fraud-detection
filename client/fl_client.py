@@ -1,10 +1,19 @@
 from collections.abc import Sized
 from typing import cast
+import logging
 
 from flwr.client import NumPyClient
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
 class FraudClient(NumPyClient):
@@ -35,9 +44,14 @@ class FraudClient(NumPyClient):
             weight_decay=1e-5,
         )
         epochs = int(config.get("local_epochs", 5))
+        logger.info(f"Starting local training: {epochs} epochs, LR={optimizer.param_groups[0]['lr']:.6f}")
 
-        for _ in range(epochs):
-            for X, y in self.train_loader:
+        for epoch in range(1, epochs + 1):
+            epoch_loss = 0.0
+            batch_count = 0
+            
+            for batch_idx, (X, y) in enumerate(self.train_loader):
+                X, y = X.to(self.model.device), y.to(self.model.device)
                 optimizer.zero_grad()
                 pred = self.model(X).squeeze()
                 # Per-sample weighted BCE — critical for class imbalance
@@ -51,7 +65,17 @@ class FraudClient(NumPyClient):
                 loss = (bce * weights).mean()
                 loss.backward()
                 optimizer.step()
+                
+                epoch_loss += loss.item()
+                batch_count += 1
+                
+                if (batch_idx + 1) % max(1, len(self.train_loader) // 5) == 0:
+                    logger.debug(f"  Epoch {epoch}/{epochs}, Batch {batch_idx + 1}/{len(self.train_loader)}: loss={loss.item():.6f}")
+            
+            avg_epoch_loss = epoch_loss / max(batch_count, 1)
+            logger.info(f"Epoch {epoch}/{epochs} complete: avg_loss={avg_epoch_loss:.6f}")
 
+        logger.info("Local training finished")
         return self.get_parameters(), len(cast(Sized, self.train_loader.dataset)), {}
 
     def evaluate(self, parameters, config):
@@ -61,12 +85,14 @@ class FraudClient(NumPyClient):
 
         with torch.no_grad():
             for X, y in self.val_loader:
+                X, y = X.to(self.model.device), y.to(self.model.device)
                 pred = self.model(X).squeeze()
                 loss = F.binary_cross_entropy(pred, y, reduction="sum")
                 total_loss += loss.item()
                 total_examples += X.shape[0]
 
         avg_loss = total_loss / max(total_examples, 1)
+        logger.info(f"Validation: avg_loss={avg_loss:.6f}, n_samples={total_examples}")
         return float(avg_loss), total_examples, {"val_loss": avg_loss}
 
 

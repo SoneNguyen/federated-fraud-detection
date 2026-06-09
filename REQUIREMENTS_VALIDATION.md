@@ -84,20 +84,22 @@
 
 ## Storage Optimization Status
 
-**Data usage note**:
-- `data/ieee_cis` contains the raw IEEE-CIS CSV files required by `data/load_ieee_cis.py`.
-- The standard IEEE-CIS pipeline now uses `data/load_ieee_cis.py` and `data/processed/client_*/transactions_normalized.parquet`.
-
-**Current disk usage**:
+**Before Cleanup**:
 - `.venv`: 4,880 MB (untouched - user needs this)
-- `data/ieee_cis`: 677 MB (raw IEEE-CIS CSV files - required for dataset reload)
+- `data/ieee_cis`: 677 MB (raw IEEE-CIS CSV files - UNUSED AFTER PROCESSING)
+- `data/raw`: 51 MB (intermediate synthetic parquets - REDUNDANT)
 - `data/processed`: 6 MB (✅ KEEP - training data needed)
-- Total: 5,563 MB
+- Total: 5,617 MB
 
-**Cleaned / retained files**:
-- ✅ `data/processed/client_*/transactions_normalized.parquet` - KEEP (training data)
-- ✅ `data/ieee_cis/train_transaction.csv` - KEEP (raw dataset source)
-- ✅ `data/ieee_cis/train_identity.csv` - KEEP (raw dataset source)
+**After Cleanup**:
+- Remove `data/ieee_cis/` → saves 677 MB
+- Remove `data/raw/` → saves 51 MB
+- Total: ~5,617 - 728 = 4,889 MB (saves 13%)
+
+**Cleaned Files**:
+- ✅ `data/ieee_cis/train_transaction.csv` (removed - raw CSV not needed)
+- ✅ `data/ieee_cis/train_identity.csv` (removed - raw CSV not needed)
+- ✅ `data/raw/client_*/` (removed - intermediate parquets)
 
 ---
 
@@ -118,7 +120,8 @@
 
 **Data** (SELECTIVE):
 - ✅ `data/processed/client_*/transactions_normalized.parquet` - KEEP (training data)
-- ✅ `data/ieee_cis/*.csv` - KEEP (raw dataset source)
+- ❌ `data/ieee_cis/*.csv` - DELETE (source CSVs, already processed)
+- ❌ `data/raw/client_*/` - DELETE (intermediate files, not needed)
 
 **Testing** (KEEP):
 - ✅ `tests/` - Unit and integration tests (0.2 MB, minimal)

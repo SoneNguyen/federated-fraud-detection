@@ -1,5 +1,6 @@
 import mlflow
 import torch
+import logging
 from flwr.server import start_server
 from flwr.server import ServerConfig
 from flwr.common import ndarrays_to_parameters
@@ -8,22 +9,32 @@ from server.strategy import WeightedFedAvg
 from server.checkpoint_manager import CheckpointManager
 from client.model import FraudMLP
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
 
 def _load_initial_parameters(ckpt: CheckpointManager):
     latest = ckpt.latest()
     if latest is None:
+        logger.info("No checkpoint found; starting with fresh parameters")
         return None
 
+    logger.info(f"Loading checkpoint: {latest.name}")
     state = torch.load(latest, map_location="cpu")
     if not isinstance(state, dict):
-        print(f"[WARN] Incompatible checkpoint {latest.name}: expected a state_dict.")
+        logger.warning(f"Incompatible checkpoint {latest.name}: expected a state_dict.")
         return None
 
     model = FraudMLP()
     keys = list(model.state_dict().keys())
     if set(keys) != set(state.keys()):
-        print(
-            f"[WARN] Incompatible checkpoint {latest.name}: key mismatch detected. "
+        logger.warning(
+            f"Incompatible checkpoint {latest.name}: key mismatch detected. "
             "Starting with fresh parameters."
         )
         return None
@@ -31,13 +42,16 @@ def _load_initial_parameters(ckpt: CheckpointManager):
     try:
         nds = [state[k].cpu().numpy() for k in keys]
     except Exception as exc:
-        print(f"[WARN] Failed to convert checkpoint {latest.name}: {exc}")
+        logger.warning(f"Failed to convert checkpoint {latest.name}: {exc}")
         return None
+    logger.info(f"Successfully loaded checkpoint with {len(keys)} parameter groups")
     return ndarrays_to_parameters(nds)
 
 
 def main() -> None:
+    logger.info("Starting Flower Server")
     mlflow.set_experiment("federated-fraud-detection")
+    logger.info("MLflow experiment: federated-fraud-detection")
 
     ckpt = CheckpointManager("checkpoints")
     initial_parameters = _load_initial_parameters(ckpt)
@@ -48,9 +62,18 @@ def main() -> None:
     if initial_parameters is not None:
         try:
             setattr(strategy, "initial_parameters", initial_parameters)
+            logger.info("Initial parameters attached to strategy")
         except Exception:
             pass
-    print("Flower server running")
+    
+    logger.info("=" * 60)
+    logger.info("Flower Server Configuration")
+    logger.info("=" * 60)
+    logger.info("Server address: 0.0.0.0:8080")
+    logger.info("Number of rounds: 10")
+    logger.info("Round timeout: 100000 seconds")
+    logger.info("=" * 60)
+    logger.info("Waiting for clients to connect...")
 
     start_server(
         server_address="0.0.0.0:8080",

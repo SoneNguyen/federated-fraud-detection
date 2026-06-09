@@ -2,6 +2,7 @@
 # It loads the local dataset, initializes the model and the client, and starts the client to connect to the server for training.
 # The client ID, server address, data path, and local epochs can be configured via environment variables.
 import os
+import torch
 from flwr.client import start_numpy_client
 from client.model import FraudMLP
 from client.fl_client import FraudClient
@@ -12,10 +13,24 @@ def main():
     addr = os.environ.get("SERVER_ADDRESS", "localhost:8080")
     path = os.environ["DATA_PATH"]
     epochs = int(os.environ.get("LOCAL_EPOCHS", "5"))
+    device = os.environ.get("DEVICE", None)  # None = auto-detect (cuda if available, else cpu)
+    
     train_l, val_l = make_loaders(path, num_workers=0)
-    model = FraudMLP()
+    model = FraudMLP(device=device)
+    
+    # Print device info
+    print(f"[Client {cid}] Using device: {model.device}")
+    if torch.cuda.is_available():
+        print(f"[Client {cid}] GPU: {torch.cuda.get_device_name(0)}")
+    
+    print(f"[Client {cid}] Configuration:")
+    print(f"  - Data path: {path}")
+    print(f"  - Train samples: {len(train_l.dataset)}")
+    print(f"  - Val samples: {len(val_l.dataset)}")
+    print(f"  - Local epochs: {epochs}")
+    
     client = FraudClient(model, train_l, val_l)
-    print(f"[Client {cid}] → {addr}")
+    print(f"[Client {cid}] Connecting to server at {addr}...")
     start_numpy_client(
         server_address=addr,
         client=client,

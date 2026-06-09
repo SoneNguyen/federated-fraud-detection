@@ -44,6 +44,9 @@ build/
 results/
 *.log
 
+# MLflow tracking database
+mlflow.db
+
 # Environment & Secrets
 .env
 .env.local

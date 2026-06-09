@@ -123,6 +123,30 @@ The client script uses these environment variables:
 - `DATA_PATH` (required)
 - `SERVER_ADDRESS` (optional; default `localhost:8080`)
 - `LOCAL_EPOCHS` (optional; default `5`)
+- `DEVICE` (optional; auto-detects GPU if available)
+
+### 2b. Convenience: Run all 3 clients at once
+
+Instead of opening three terminals manually, use one of these convenience scripts to launch all clients simultaneously:
+
+**Option A: PowerShell script (Windows)**
+
+```powershell
+.\run_all_clients.ps1
+```
+
+**Option B: Python script (cross-platform)**
+
+```powershell
+uv run python run_all_clients.py
+```
+
+Both scripts:
+
+- verify that data is prepared and available
+- start all 3 clients in parallel with proper environment setup
+- monitor them until completion
+- show cleanup status on Ctrl+C
 
 ### 3. Verify training output and checkpoints
 

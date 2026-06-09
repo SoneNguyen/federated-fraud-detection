@@ -50,8 +50,14 @@ def eval_model(model: torch.nn.Module, X: torch.Tensor, y: np.ndarray) -> dict[s
 
 def evaluate(model: torch.nn.Module, X: torch.Tensor, y: np.ndarray) -> dict[str, Any]:
     model.eval()
+    # Get device from model if it has one, otherwise use CPU
+    if hasattr(model, 'device') and isinstance(model.device, torch.device):
+        device = model.device
+    else:
+        device = torch.device('cpu')
+    X = X.to(device)
     with torch.no_grad():
-        probs = model(X).numpy().squeeze()
+        probs = model(X).cpu().numpy().squeeze()
     auprc = average_precision_score(y, probs)
     auroc = roc_auc_score(y, probs)
     prec, rec, thresholds = precision_recall_curve(y, probs)
@@ -76,6 +82,12 @@ def run_evaluation():
     X_test, y_test = load_and_prep(test_path)
     X_test, y_test = X_test[split:], y_test[split:]
 
+    # Detect device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    if device.type == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+
     # 1. Federated model (latest checkpoint)
     fl_ckpts = sorted(Path("checkpoints").glob("round_*.pt"))
     if not fl_ckpts:
@@ -84,16 +96,16 @@ def run_evaluation():
             "Please run training or populate the checkpoints directory before evaluation."
         )
     fl_ckpt = fl_ckpts[-1]
-    fl_model = FraudMLP()
-    fl_model.load_state_dict(torch.load(fl_ckpt, map_location="cpu"))
+    fl_model = FraudMLP(device=str(device))
+    fl_model.load_state_dict(torch.load(fl_ckpt, map_location=fl_model.device))
     results["federated"] = evaluate(fl_model, X_test, y_test)
 
     # 2. Local-only baseline (train on client_0 only, no federation)
     # (load from local_only_baseline.pt if exists, else skip)
     local_ckpt = Path("checkpoints/local_only_baseline.pt")
     if local_ckpt.exists():
-        local_model = FraudMLP()
-        local_model.load_state_dict(torch.load(local_ckpt, map_location="cpu"))
+        local_model = FraudMLP(device=str(device))
+        local_model.load_state_dict(torch.load(local_ckpt, map_location=local_model.device))
         results["local_only"] = evaluate(local_model, X_test, y_test)
 
     print("\n=== Evaluation Results ===")
