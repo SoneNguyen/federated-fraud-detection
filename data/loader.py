@@ -1,8 +1,8 @@
 """Shared data loading utilities.
 
 Other modules should call make_loaders() from client.dataset directly.
-This module re-exports it for convenience and adds a helper for loading
-a raw dataframe with metadata columns intact (used by the drift monitor).
+This module re-exports it for convenience and adds helpers for loading
+client datasets and drift reference windows.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def load_raw(client_id: int, base: str = "data/raw") -> pd.DataFrame:
     path = Path(base) / f"client_{client_id}" / "transactions.parquet"
     if not path.exists():
         raise FileNotFoundError(
-            f"Raw data not found at {path}. Run data/generate_synthetic.py first."
+            f"Raw data not found at {path}. Ensure the raw client dataset exists."
         )
     return pd.read_parquet(path)
 
@@ -25,7 +25,7 @@ def load_processed(client_id: int, base: str = "data/processed") -> pd.DataFrame
     path = Path(base) / f"client_{client_id}" / "transactions_normalized.parquet"
     if not path.exists():
         raise FileNotFoundError(
-            f"Processed data not found at {path}. Run data/normalize.py first."
+            f"Processed data not found at {path}. Run data/load_ieee_cis.py first."
         )
     return pd.read_parquet(path)
 

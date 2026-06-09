@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import torch
 import pandas as pd
 from pathlib import Path
@@ -46,6 +47,7 @@ def make_loaders(
     val_split: float = 0.15,
     batch_size: int = 256,
     seed: int = 42,
+    num_workers: int | None = None,
 ) -> tuple[DataLoader, DataLoader]:
     ds = FraudDataset(path)
     n_val = int(len(ds) * val_split)
@@ -54,9 +56,11 @@ def make_loaders(
         [len(ds) - n_val, n_val],
         generator=torch.Generator().manual_seed(seed),
     )
+    if num_workers is None:
+        num_workers = 0 if os.name == "nt" else 2
     return (
-        DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2),
-        DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2),
+        DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers),
+        DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers),
     )
 
 if __name__ == "__main__":

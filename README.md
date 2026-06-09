@@ -10,6 +10,16 @@ Install dependencies with `uv`:
 uv install
 ```
 
+## Data preparation
+
+To prepare the IEEE-CIS dataset for federated training, run:
+
+```powershell
+uv run python data/load_ieee_cis.py
+```
+
+This script reads raw files from `data/ieee_cis/` and writes normalized per-client parquet data to `data/processed/client_{0,1,2}/`.
+
 ## Run tests
 
 Use `uv` to execute tests in the current project environment:

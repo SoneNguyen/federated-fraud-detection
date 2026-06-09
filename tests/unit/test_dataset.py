@@ -72,6 +72,15 @@ def test_make_loaders_batch_shape(tmp_path):
     assert X.dtype == torch.float32
 
 
+def test_make_loaders_num_workers(tmp_path):
+    p = _write_parquet(tmp_path / "test.parquet", n=128)
+    train_l, _ = make_loaders(str(p), val_split=0.1, batch_size=16, num_workers=0)
+    X, y = next(iter(train_l))
+    assert X.shape[1] == 11
+    assert y.shape[0] == 16
+    assert train_l.num_workers == 0
+
+
 def test_dataset_missing_column_raises(tmp_path):
     # Write parquet without one required feature
     p = tmp_path / "bad.parquet"

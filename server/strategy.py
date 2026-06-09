@@ -1,11 +1,13 @@
 import json
 import numpy as np
 import mlflow
+import torch
 from flwr.common import ndarrays_to_parameters, parameters_to_ndarrays
 from flwr.server.strategy import FedAvg
 from collections import OrderedDict
 from typing import Optional
 
+from client.model import FraudMLP
 from server.checkpoint_manager import CheckpointManager
 
 with open("contracts/schema.json") as f:
@@ -41,11 +43,10 @@ class WeightedFedAvg(FedAvg):
         # ── save checkpoint ───────────────────────────────────────────────────
         # Reconstruct a state_dict from the aggregated numpy arrays so
         # torch.load() produces something the model can load directly.
-        from client.model import FraudMLP
         model = FraudMLP()
         keys = list(model.state_dict().keys())
         state_dict = OrderedDict(
-            {k: __import__("torch").tensor(v) for k, v in zip(keys, agg)}
+            {k: torch.tensor(v) for k, v in zip(keys, agg)}
         )
         name = f"round_{server_round:03d}"
         path = self.ckpt.save(

@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 import torch
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 
 from api.middleware import AccessLogMiddleware, RateLimitMiddleware
 from api.schemas import FEATURE_ORDER, Prediction, PredictionMetadata, Transaction
@@ -23,7 +23,16 @@ from client.model import FraudMLP
 
 logger = logging.getLogger("api.main")
 
-app = FastAPI(title="Fraud Detection API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _model, _norm_params, _model_version
+    try:
+        _model, _norm_params, _model_version = _load_latest_model()
+    except FileNotFoundError as e:
+        logger.warning("Startup: %s", e)
+    yield
+
+app = FastAPI(title="Fraud Detection API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(RateLimitMiddleware, max_requests=1000, window_seconds=60)
 
@@ -78,23 +87,13 @@ def _load_latest_model() -> tuple[FraudMLP, dict, str]:
     if not NORM_PARAMS_PATH.exists():
         raise FileNotFoundError(
             f"Normalization params not found at {NORM_PARAMS_PATH}. "
-            "Run data/normalize.py first."
+            "Run data/load_ieee_cis.py first."
         )
     with open(NORM_PARAMS_PATH) as f:
         norm = json.load(f)
 
     logger.info("Loaded model checkpoint: %s", latest.name)
     return model, norm, latest.stem
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    global _model, _norm_params, _model_version
-    try:
-        _model, _norm_params, _model_version = _load_latest_model()
-    except FileNotFoundError as e:
-        # Allow the API to start without a checkpoint — /predict will return 503
-        logger.warning("Startup: %s", e)
 
 
 @app.get("/health")

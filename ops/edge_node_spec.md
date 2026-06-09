@@ -32,7 +32,7 @@ In production, replace `FXConverter.__init__` with an API call and store the
 | 2      | SGD      | Asia/Singapore     |
 
 In the prototype, each client has a hardcoded IANA timezone string in
-`CLIENT_CFG` inside `data/generate_synthetic.py`.
+`CLIENT_CFG` inside the edge node configuration.
 
 In production, the primary lookup is BIN country → IANA timezone using
 `pytz` + `tzdata`. Fallback chain:

@@ -12,7 +12,7 @@ def main():
     addr = os.environ.get("SERVER_ADDRESS", "localhost:8080")
     path = os.environ["DATA_PATH"]
     epochs = int(os.environ.get("LOCAL_EPOCHS", "5"))
-    train_l, val_l = make_loaders(path)
+    train_l, val_l = make_loaders(path, num_workers=0)
     model = FraudMLP()
     client = FraudClient(model, train_l, val_l)
     print(f"[Client {cid}] → {addr}")

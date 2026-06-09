@@ -23,7 +23,7 @@ def main() -> None:
     processed_path = Path("data/processed/client_0/transactions_normalized.parquet")
     if not processed_path.exists():
         raise FileNotFoundError(
-            f"{processed_path} not found. Run data/normalize.py first."
+            f"{processed_path} not found. Run data/load_ieee_cis.py first."
         )
 
     df = pd.read_parquet(processed_path)
