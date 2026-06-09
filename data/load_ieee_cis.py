@@ -146,8 +146,8 @@ def main() -> None:
         print(f"  Client {cid}: saved {len(c):,} rows → {out_path}")
 
     print("\n✓ IEEE-CIS data pipeline complete.")
-    print("  Next: docker compose down && docker compose up -d")
-    print("  The containers will read the new parquet files from the bind mounts.")
+    print("  Processed data is available under data/processed/client_{0,1,2}/")
+    print("  Next: start the server and clients using the repo's Python entrypoints.")
 
 
 if __name__ == "__main__":
