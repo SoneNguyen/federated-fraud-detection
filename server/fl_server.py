@@ -14,11 +14,25 @@ def _load_initial_parameters(ckpt: CheckpointManager):
     if latest is None:
         return None
 
-    state = torch.load(latest)
+    state = torch.load(latest, map_location="cpu")
+    if not isinstance(state, dict):
+        print(f"[WARN] Incompatible checkpoint {latest.name}: expected a state_dict.")
+        return None
+
     model = FraudMLP()
     keys = list(model.state_dict().keys())
-    # Preserve parameter ordering to match model.state_dict()
-    nds = [state[k].cpu().numpy() for k in keys]
+    if set(keys) != set(state.keys()):
+        print(
+            f"[WARN] Incompatible checkpoint {latest.name}: key mismatch detected. "
+            "Starting with fresh parameters."
+        )
+        return None
+
+    try:
+        nds = [state[k].cpu().numpy() for k in keys]
+    except Exception as exc:
+        print(f"[WARN] Failed to convert checkpoint {latest.name}: {exc}")
+        return None
     return ndarrays_to_parameters(nds)
 
 
