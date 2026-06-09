@@ -9,12 +9,19 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
-# Data & Checkpoints 
+# Data & Checkpoints
+data/ieee_cis/
 data/raw/
 data/processed/
 checkpoints/
 !data/raw/.gitkeep      # Keeps the empty folder in git
 !data/processed/.gitkeep
+
+# Large dataset artifacts
+*.parquet
+*.pt
+*.pth
+*.model
 
 # Local python environment files
 .python-version
@@ -44,4 +51,4 @@ results/
 
 # OS Files
 .DS_Store
-Thumbs.dbgit diff --name-only
+Thumbs.db
