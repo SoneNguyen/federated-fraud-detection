@@ -46,7 +46,8 @@ NORM_PARAMS_PATH = Path("contracts/normalization_params.json")
 NUMERIC_COLS     = [
     "tx_amount_usd", "tx_count_1h", "tx_count_24h",
     "tx_volume_1h_usd", "tx_volume_24h_usd", "merchant_cat_dev",
-    "geo_velocity_kmh", "days_since_last_tx", "account_age_days",
+    "geo_velocity_kmh", "dist2_km", "card6_code",
+    "days_since_last_tx", "account_age_days",
 ]
 
 
@@ -127,23 +128,13 @@ async def predict(tx: Transaction) -> Prediction:
         )
 
     # Build feature vector in schema-defined order
-    raw_vals: dict[str, float] = {
-        "tx_amount_usd":      tx.tx_amount_usd,
-        "tx_count_1h":        tx.tx_count_1h,
-        "tx_count_24h":       tx.tx_count_24h,
-        "tx_volume_1h_usd":   tx.tx_volume_1h_usd,
-        "tx_volume_24h_usd":  tx.tx_volume_24h_usd,
-        "merchant_cat_dev":   tx.merchant_cat_dev,
-        "geo_velocity_kmh":   tx.geo_velocity_kmh,
-        "days_since_last_tx": tx.days_since_last_tx,
-        "account_age_days":   tx.account_age_days,
-        "hour_of_day_local":  tx.hour_of_day_local,
-        "day_of_week":        tx.day_of_week,
-    }
+    raw_vals = tx.model_dump()
 
     # Normalize numeric features using federated global stats
     features: list[float] = []
     for col in FEATURE_ORDER:
+        if col not in raw_vals:
+            raise HTTPException(status_code=400, detail=f"Missing feature {col}")
         v = float(raw_vals[col])
         if col in _norm_params:
             v = (v - _norm_params[col]["mean"]) / _norm_params[col]["std"]

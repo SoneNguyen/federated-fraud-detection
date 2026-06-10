@@ -31,7 +31,7 @@ def test_dataset_loads_correct_shape(tmp_path):
     ds = FraudDataset(str(p))
     assert len(ds) == 512
     X, y = ds[0]
-    assert X.shape == (11,)
+    assert X.shape == (len(FEATURE_ORDER),)
     assert y.shape == ()
 
 
@@ -39,7 +39,7 @@ def test_dataset_feature_count(tmp_path):
     p = _write_parquet(tmp_path / "test.parquet")
     ds = FraudDataset(str(p))
     X, _ = ds[0]
-    assert X.shape[0] == 11  # total_features from schema
+    assert X.shape[0] == len(FEATURE_ORDER)  # total_features from schema
 
 
 def test_dataset_labels_binary(tmp_path):
@@ -53,7 +53,7 @@ def test_dataset_excludes_metadata_from_x(tmp_path):
     p = _write_parquet(tmp_path / "test.parquet")
     ds = FraudDataset(str(p))
     # X must not contain orig_currency or stale_fx_flag columns
-    assert ds.X.shape[1] == 11
+    assert ds.X.shape[1] == len(FEATURE_ORDER)
 
 
 def test_make_loaders_split_sizes(tmp_path):
@@ -67,7 +67,7 @@ def test_make_loaders_batch_shape(tmp_path):
     p = _write_parquet(tmp_path / "test.parquet", n=256)
     train_l, _ = make_loaders(str(p), val_split=0.2, batch_size=32)
     X, y = next(iter(train_l))
-    assert X.shape == (32, 11)
+    assert X.shape == (32, len(FEATURE_ORDER))
     assert y.shape == (32,)
     assert X.dtype == torch.float32
 
@@ -76,7 +76,7 @@ def test_make_loaders_num_workers(tmp_path):
     p = _write_parquet(tmp_path / "test.parquet", n=128)
     train_l, _ = make_loaders(str(p), val_split=0.1, batch_size=16, num_workers=0)
     X, y = next(iter(train_l))
-    assert X.shape[1] == 11
+    assert X.shape[1] == len(FEATURE_ORDER)
     assert y.shape[0] == 16
     assert train_l.num_workers == 0
 

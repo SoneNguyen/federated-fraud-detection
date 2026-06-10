@@ -34,7 +34,7 @@ def _write_parquet(path: Path, n: int = 2000) -> Path:
 def test_load_test_returns_correct_shapes(tmp_path):
     p = _write_parquet(tmp_path / "data.parquet", n=1000)
     X, y = load_test(str(p), test_frac=0.2)
-    assert X.shape[1] == 11
+    assert X.shape[1] == len(FEATURE_ORDER)
     assert len(y) == 200
     assert X.dtype == torch.float32
 
@@ -45,7 +45,7 @@ def test_eval_model_returns_expected_keys(tmp_path):
     rng = np.random.default_rng(1)
     n = 500
     n_fraud = 25
-    X = torch.tensor(rng.standard_normal((n, 11)), dtype=torch.float32)
+    X = torch.tensor(rng.standard_normal((n, len(FEATURE_ORDER))), dtype=torch.float32)
     y = np.array([1] * n_fraud + [0] * (n - n_fraud))
     result = eval_model(model, X, y)
     assert "AUPRC" in result
@@ -59,7 +59,7 @@ def test_eval_model_returns_expected_keys(tmp_path):
 
 def test_eval_model_schema_version(tmp_path):
     model = FraudMLP()
-    X = torch.randn(100, 11)
+    X = torch.randn(100, len(FEATURE_ORDER))
     y = np.array([1] * 5 + [0] * 95)
     result = eval_model(model, X, y)
     assert result["schema_version"] == "3.0"

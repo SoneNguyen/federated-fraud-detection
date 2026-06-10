@@ -45,7 +45,7 @@ def main():
         env["CLIENT_ID"] = str(client_id)
         env["DATA_PATH"] = str(data_path)
         env["SERVER_ADDRESS"] = "localhost:8080"
-        env["LOCAL_EPOCHS"] = "10"
+        env["LOCAL_EPOCHS"] = "2"
         
         # Start client process
         try:

@@ -67,7 +67,7 @@ class FraudClientDP(FraudClient):
                 weight_decay=1e-5,
             )
 
-        epochs = int(config.get("local_epochs", 5))
+        epochs = int(config.get("local_epochs", 2))
         import torch.nn.functional as F
 
         for _ in range(epochs):

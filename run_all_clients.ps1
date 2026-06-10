@@ -54,7 +54,7 @@ foreach ($client_id in 0, 1, 2) {
         $env:CLIENT_ID = $ClientID
         $env:DATA_PATH = $DataPath
         $env:SERVER_ADDRESS = "localhost:8080"
-        $env:LOCAL_EPOCHS = 5
+        $env:LOCAL_EPOCHS = 2
         
         # Run client
         & uv run python client/run_client.py

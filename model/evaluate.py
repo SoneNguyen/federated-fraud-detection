@@ -57,7 +57,7 @@ def evaluate(model: torch.nn.Module, X: torch.Tensor, y: np.ndarray) -> dict[str
         device = torch.device('cpu')
     X = X.to(device)
     with torch.no_grad():
-        probs = model(X).cpu().numpy().squeeze()
+        probs = torch.sigmoid(model(X)).cpu().numpy().squeeze()
     auprc = average_precision_score(y, probs)
     auroc = roc_auc_score(y, probs)
     prec, rec, thresholds = precision_recall_curve(y, probs)

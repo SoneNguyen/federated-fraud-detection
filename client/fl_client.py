@@ -4,9 +4,11 @@ import logging
 import os
 
 from flwr.client import NumPyClient
+from flwr.common import Scalar
 import numpy as np
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import average_precision_score, roc_auc_score, precision_recall_curve, f1_score
 
 # ─ Per-client logging with easy comparison ─────────────────────────────────
 CLIENT_ID = int(os.environ.get("CLIENT_ID", "0"))
@@ -28,28 +30,29 @@ if not logger.handlers:
 
 class FocalLoss(torch.nn.Module):
     """Focal loss for handling class imbalance.
-    
-    Focuses on hard examples by down-weighting easy ones.
-    L = -alpha * (1-pt)^gamma * log(pt)
-    where pt is model confidence in true class.
+
+    Uses logits for numerical stability and supports hard-positive weighting.
     """
-    def __init__(self, alpha: float = 0.25, gamma: float = 2.0):
+    def __init__(self, alpha: float = 0.75, gamma: float = 2.0):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
+        self.base_loss = torch.nn.BCEWithLogitsLoss(reduction="none")
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        bce = F.binary_cross_entropy(pred, target, reduction="none")
-        pt = torch.where(target == 1, pred, 1 - pred)
-        focal_weight = (1 - pt) ** self.gamma
-        loss = self.alpha * focal_weight * bce
+    def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        target = target.float()
+        bce = self.base_loss(logits, target)
+        prob = torch.sigmoid(logits)
+        pt = torch.where(target == 1, prob, 1 - prob)
+        focal_weight = self.alpha * (1 - pt) ** self.gamma
+        loss = focal_weight * bce
         return loss.mean()
 
 
 class FraudClient(NumPyClient):
     """Federated learning client for fraud detection with focal loss."""
 
-    def __init__(self, model: torch.nn.Module, train_loader, val_loader, local_epochs: int = 5, lr: float = 1e-3, weight_decay: float = 1e-4):
+    def __init__(self, model: torch.nn.Module, train_loader, val_loader, local_epochs: int = 2, lr: float = 1e-3, weight_decay: float = 1e-4):
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -103,22 +106,55 @@ class FraudClient(NumPyClient):
         logger.info("TRAINING COMPLETE")
         return self.get_parameters(), len(cast(Sized, self.train_loader.dataset)), {}
 
-    def evaluate(self, parameters, config):
+    def evaluate(self, parameters, config) -> tuple[float, int, dict[str, Scalar]]:
         self.set_parameters(parameters)
         self.model.eval()
         total_loss, total_examples = 0.0, 0
 
+        all_probs = []
+        all_targets = []
         with torch.no_grad():
             for X, y in self.val_loader:
                 X, y = X.to(self.model.device), y.to(self.model.device)
-                pred = self.model(X).squeeze()
-                loss = self.focal_loss(pred, y)
+                logits = self.model(X).squeeze()
+                loss = self.focal_loss(logits, y)
+                probs = torch.sigmoid(logits)
+
                 total_loss += loss.item() * X.shape[0]
                 total_examples += X.shape[0]
+                all_probs.append(probs.cpu().numpy())
+                all_targets.append(y.cpu().numpy())
 
         avg_loss = total_loss / max(total_examples, 1)
-        logger.info(f"VALIDATION | loss={avg_loss:.6f}, samples={total_examples}")
-        return float(avg_loss), total_examples, {"val_loss": avg_loss}
+        y_true = np.concatenate(all_targets) if all_targets else np.array([], dtype=np.int8)
+        y_prob = np.concatenate(all_probs) if all_probs else np.array([], dtype=np.float32)
+
+        if len(np.unique(y_true)) > 1:
+            auprc = average_precision_score(y_true, y_prob)
+            auroc = roc_auc_score(y_true, y_prob)
+            prec, rec, thresholds = precision_recall_curve(y_true, y_prob)
+            f1s = 2 * prec * rec / (prec + rec + 1e-9)
+            best_t = float(thresholds[f1s[:-1].argmax()]) if len(thresholds) else 0.5
+            best_f1 = float(f1s.max())
+        else:
+            auprc = float('nan')
+            auroc = float('nan')
+            best_t = 0.5
+            best_f1 = 0.0
+
+        metrics: dict[str, Scalar] = {
+            "val_loss": float(avg_loss),
+            "val_auprc": float(auprc),
+            "val_auroc": float(auroc),
+            "val_f1": float(best_f1),
+            "val_threshold": float(best_t),
+        }
+
+        logger.info(
+            f"VALIDATION | loss={avg_loss:.6f}, AUPRC={metrics['val_auprc']:.4f}, "
+            f"AUROC={metrics['val_auroc']:.4f}, F1={metrics['val_f1']:.4f}, samples={total_examples}"
+        )
+        return float(avg_loss), total_examples, metrics
 
 
 __all__ = ["FraudClient"]

@@ -11,6 +11,8 @@ class Transaction(BaseModel):
     tx_volume_24h_usd:   float
     merchant_cat_dev:    float
     geo_velocity_kmh:    float
+    dist2_km:            float
+    card6_code:          int
     days_since_last_tx:  float
     account_age_days:    int
     hour_of_day_local:   int
@@ -41,6 +43,13 @@ class Transaction(BaseModel):
             raise ValueError("tx_amount_usd must be non-negative")
         return v
 
+    @field_validator("card6_code")
+    @classmethod
+    def v_card6_code(cls, v: int) -> int:
+        if not (0 <= v <= 4):
+            raise ValueError("card6_code must be 0-4")
+        return v
+
     @field_validator("stale_fx_flag")
     @classmethod
     def v_stale(cls, v: int) -> int:
@@ -64,6 +73,7 @@ class Prediction(BaseModel):
 FEATURE_ORDER = [
     "tx_amount_usd", "tx_count_1h", "tx_count_24h",
     "tx_volume_1h_usd", "tx_volume_24h_usd", "merchant_cat_dev",
-    "geo_velocity_kmh", "days_since_last_tx", "account_age_days",
+    "geo_velocity_kmh", "dist2_km", "card6_code",
+    "days_since_last_tx", "account_age_days",
     "hour_of_day_local", "day_of_week",
-]  # 11 — matches schema
+]  # 13 — matches schema

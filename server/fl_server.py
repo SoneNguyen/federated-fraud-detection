@@ -32,13 +32,23 @@ def _load_initial_parameters(ckpt: CheckpointManager):
         return None
 
     model = FraudMLP()
-    keys = list(model.state_dict().keys())
+    current_state = model.state_dict()
+    keys = list(current_state.keys())
     if set(keys) != set(state.keys()):
         logger.warning(
             f"Incompatible checkpoint {latest.name}: key mismatch detected. "
             "Starting with fresh parameters."
         )
         return None
+
+    for k in keys:
+        if state[k].shape != current_state[k].shape:
+            logger.warning(
+                f"Incompatible checkpoint {latest.name}: shape mismatch on '{k}' "
+                f"(checkpoint={tuple(state[k].shape)}, model={tuple(current_state[k].shape)}). "
+                "Starting with fresh parameters."
+            )
+            return None
 
     try:
         nds = [state[k].cpu().numpy() for k in keys]

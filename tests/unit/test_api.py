@@ -18,6 +18,8 @@ VALID_PAYLOAD = {
     "tx_volume_24h_usd": 340.0,
     "merchant_cat_dev": -0.1,
     "geo_velocity_kmh": 5.0,
+    "dist2_km": 2.0,
+    "card6_code": 1,
     "days_since_last_tx": 3.0,
     "account_age_days": 1200,
     "hour_of_day_local": 10,
@@ -34,6 +36,8 @@ NORM_PARAMS = {
     "tx_volume_24h_usd":  {"mean": 3281.0, "std": 9589.0},
     "merchant_cat_dev":   {"mean": 0.04,   "std": 1.06},
     "geo_velocity_kmh":   {"mean": 18.9,   "std": 46.6},
+    "dist2_km":           {"mean": 3.2,    "std": 4.9},
+    "card6_code":         {"mean": 1.3,    "std": 1.1},
     "days_since_last_tx": {"mean": 2.96,   "std": 3.0},
     "account_age_days":   {"mean": 1809.0, "std": 1062.0},
 }

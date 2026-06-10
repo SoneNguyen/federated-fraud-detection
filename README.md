@@ -77,10 +77,11 @@ uv run python server/fl_server.py
 
 The server:
 
-- starts a Flower server on `0.0.0.0:8080`
+- starts a Flower server on `localhost:8080`
 - uses the `WeightedFedAvg` strategy in `server/strategy.py`
 - loads the latest compatible checkpoint from `checkpoints/` if present
 - saves new checkpoints to `checkpoints/round_XXX.pt`
+- tracks per-round validation metrics (AUPRC/AUROC/F1) in `results/evaluation_history.json`
 
 ### 2. Start the clients
 
@@ -115,14 +116,14 @@ Each client:
 - loads a local dataset partition from `DATA_PATH`
 - builds a `FraudMLP` model
 - joins the Flower server at `SERVER_ADDRESS` (default `localhost:8080`)
-- performs local training for `LOCAL_EPOCHS` (default `5`)
+- performs local training for `LOCAL_EPOCHS` (default `2`)
 
 The client script uses these environment variables:
 
 - `CLIENT_ID` (required)
 - `DATA_PATH` (required)
 - `SERVER_ADDRESS` (optional; default `localhost:8080`)
-- `LOCAL_EPOCHS` (optional; default `5`)
+- `LOCAL_EPOCHS` (optional; default `2`)
 - `DEVICE` (optional; auto-detects GPU if available)
 
 ### 2b. Convenience: Run all 3 clients at once

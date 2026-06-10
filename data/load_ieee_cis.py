@@ -16,9 +16,9 @@ __all__ = ["main"]
 # ── Load schema ───────────────────────────────────────────────────────────────
 with open("contracts/schema.json") as f:
     _s = json.load(f)
-FEATURE_ORDER = _s["feature_schema"]["feature_order"]       # 11 items
-NUMERIC       = [f["name"] for f in _s["feature_schema"]["numeric_features"]]  # 9 items
-LABEL         = _s["feature_schema"]["label"]["name"]       # is_fraud
+FEATURE_ORDER = _s["feature_schema"]["feature_order"]
+NUMERIC       = [f["name"] for f in _s["feature_schema"]["numeric_features"]]
+LABEL         = _s["feature_schema"]["label"]["name"]
 
 RAW_DIR  = Path("data/ieee_cis")
 RAW_PROC = Path("data/processed")
@@ -28,16 +28,20 @@ RAW_PROC = Path("data/processed")
 def engineer(df, tx_ref):
     out = pd.DataFrame(index=df.index)
 
-    # tx_amount_usd — TransactionAmt is already USD
-    out["tx_amount_usd"] = df["TransactionAmt"].fillna(0).clip(0, 1e9).astype("float32")
+    raw_amount = df["TransactionAmt"].fillna(0).clip(0, 1e9).astype("float32")
+    raw_count_1h = df["C1"].fillna(0).clip(0, 500).astype("float32")
+    raw_count_24h = df["C2"].fillna(0).clip(0, 5000).astype("float32")
 
-    # Velocity counts — C1/C2 are pre-computed count features in IEEE-CIS
-    out["tx_count_1h"]  = df["C1"].fillna(0).clip(0, 500).astype("int32")
-    out["tx_count_24h"] = df["C2"].fillna(0).clip(0, 5000).astype("int32")
+    # Log-scale skewed numeric inputs to sharpen fraud signal and stabilize training.
+    out["tx_amount_usd"] = np.log1p(raw_amount)
+    out["tx_count_1h"] = np.log1p(raw_count_1h)
+    out["tx_count_24h"] = np.log1p(raw_count_24h)
 
-    # Volume = amount × count (approximation — IEEE-CIS has no raw volume cols)
-    out["tx_volume_1h_usd"]  = (out["tx_amount_usd"] * out["tx_count_1h"]).clip(0, 5e8).astype("float32")
-    out["tx_volume_24h_usd"] = (out["tx_amount_usd"] * out["tx_count_24h"]).clip(0, 5e9).astype("float32")
+    # Volume = amount × count, then log-transform to compress long tails.
+    raw_volume_1h = (raw_amount * raw_count_1h).clip(0, 5e8)
+    raw_volume_24h = (raw_amount * raw_count_24h).clip(0, 5e9)
+    out["tx_volume_1h_usd"] = np.log1p(raw_volume_1h).astype("float32")
+    out["tx_volume_24h_usd"] = np.log1p(raw_volume_24h).astype("float32")
 
     # Merchant category deviation — ProductCD z-scored
     prod_map  = {"W": 0, "H": 1, "C": 2, "S": 3, "R": 4}
@@ -48,61 +52,27 @@ def engineer(df, tx_ref):
     # Geo velocity — dist1 (miles) / (D1 days × 24h) → km/h
     dist = df["dist1"].fillna(0).clip(0, 10000)
     days = df["D1"].fillna(1).clip(0.01, 365)
-    out["geo_velocity_kmh"] = ((dist * 1.60934) / (days * 24)).clip(0, 2000).astype("float32")
+    out["geo_velocity_kmh"] = np.log1p(((dist * 1.60934) / (days * 24)).clip(0, 2000)).astype("float32")
+
+    # Second distance feature — dist2 contains an additional travel distance metric.
+    raw_dist2 = df["dist2"].fillna(0).clip(0, 10000).astype("float32")
+    out["dist2_km"] = np.log1p(raw_dist2 * 1.60934).astype("float32")
+
+    # Card type signal — encode the card channel into a compact numeric feature.
+    card6_map = {"debit": 0, "credit": 1, "charge card": 2, "debit or credit": 3}
+    out["card6_code"] = df["card6"].map(card6_map).fillna(4).astype("float32")
 
     # Days since last transaction
-    out["days_since_last_tx"] = df["D1"].fillna(0).clip(0, 365).astype("float32")
+    out["days_since_last_tx"] = np.log1p(df["D1"].fillna(0).clip(0, 365)).astype("float32")
 
     # Account age proxy — D3 = days since last tx with this card
-    out["account_age_days"] = df["D3"].fillna(0).clip(0, 10000).astype("int32")
+    out["account_age_days"] = np.log1p(df["D3"].fillna(0).clip(0, 10000)).astype("float32")
 
     # ─── NEW FEATURES (v4.0) - IEEE-CIS Compatible ─────────────────────────────
     
-    # Device entropy — card-level device diversity using DeviceType and DeviceInfo counts
-    device_type = df["DeviceType"].fillna("unknown").astype(str) if "DeviceType" in df.columns else pd.Series("unknown", index=df.index)
-    device_info = df["DeviceInfo"].fillna("unknown").astype(str) if "DeviceInfo" in df.columns else pd.Series("unknown", index=df.index)
-    card_ids = df["card1"].fillna(-1).astype(str)
-    device_diversity = df.groupby(card_ids)["DeviceInfo"].transform("nunique").replace(0, 1).astype(float)
-    type_diversity = df.groupby(card_ids)["DeviceType"].transform("nunique").replace(0, 1).astype(float)
-    entropy_score = ((device_diversity / device_diversity.max()) * 0.6 + (type_diversity / type_diversity.max()) * 0.4).fillna(0)
-    out["device_entropy"] = entropy_score.clip(0, 1).astype("float32")
-    
-    # Merchant risk score — card brand and product category fraud rate proxy
-    card_brand = tx_ref["Card4"].fillna("unknown").astype(str) if "Card4" in tx_ref.columns else pd.Series("unknown", index=tx_ref.index)
-    prod_card_key = prod_code.astype(str) + "_" + card_brand.astype(str)
-    brand_risk = df.groupby(card_brand)["isFraud"].transform("mean").fillna(0.01)
-    prod_card_risk = df.groupby(prod_card_key)["isFraud"].transform("mean").fillna(0.01)
-    out["merchant_risk_score"] = (0.4 * brand_risk + 0.6 * prod_card_risk).clip(0, 1).astype("float32")
-    
-    # Refund velocity — proxy from D11 time gap (lower gap can indicate rapid activity)
-    if "D11" in df.columns:
-        refund_vel = df["D11"].fillna(100).clip(0, 100).astype(float)
-        out["refund_velocity_7d"] = np.exp(-refund_vel / 7.0).astype("float32")
-    else:
-        out["refund_velocity_7d"] = pd.Series(0.0, index=df.index).astype("float32")
-    
-    # Velocity per merchant — from C3 count feature by card in a time window
-    tx_per_merchant = df["C3"].fillna(0).clip(0, 500).astype(float) if "C3" in df.columns else pd.Series(0.0, index=df.index)
-    out["velocity_per_merchant"] = (tx_per_merchant / 500.0).clip(0, 1).astype("float32")
-    
-    # Is international — from Addr1, Addr2 mismatch (billing vs shipping address)
-    addr1 = df["Addr1"].fillna(0) if "Addr1" in df.columns else pd.Series(0, index=df.index)
-    addr2 = df["Addr2"].fillna(0) if "Addr2" in df.columns else pd.Series(0, index=df.index)
-    addr_mismatch = (addr1 != addr2).astype(int)
-    # Also check distance features for geo-velocity (dist1 > 500 miles = likely intl)
-    dist_intl = (dist > 500).astype(int)
-    out["is_international"] = (addr_mismatch | dist_intl).astype("int8")
-
     # Local hour — TransactionDT is seconds from a reference epoch
     out["hour_of_day_local"] = ((df["TransactionDT"] // 3600) % 24).astype("int8")
     out["day_of_week"]       = ((df["TransactionDT"] // 86400) % 7).astype("int8")
-
-    # Device consistency — consistency score for same card over multiple device observations
-    out["device_consistency"] = (1.0 - out["device_entropy"]).astype("float32")
-    
-    # Device consistency — consistency score for same device across transactions
-    # Proxy: inverse of device entropy (more consistent = lower entropy)
-    out["device_consistency"] = (1.0 - out["device_entropy"]).astype("float32")
 
     # Label
     out[LABEL] = df["isFraud"].astype("int8")
@@ -115,7 +85,7 @@ def engineer(df, tx_ref):
     full_cols = FEATURE_ORDER + ["orig_currency", "stale_fx_flag", LABEL]
     out = out[full_cols].fillna(0)
 
-    assert list(out.columns[:17]) == FEATURE_ORDER, "Column order mismatch"
+    assert list(out.columns[:len(FEATURE_ORDER)]) == FEATURE_ORDER, "Column order mismatch"
     assert out.isnull().sum().sum() == 0, "Nulls found after fillna"
     return out
 
@@ -151,9 +121,14 @@ def main() -> None:
 
     all_stats = []
     for c in clients_raw.values():
-        stats = {col: {"n": len(c), "sum": float(c[col].sum()),
-                       "sum_sq": float((c[col]**2).sum())}
-                 for col in NUMERIC}
+        stats = {
+            col: {
+                "n": len(c),
+                "sum": float(c[col].sum()),
+                "sum_sq": float((c[col].astype("float64") ** 2).sum()),
+            }
+            for col in NUMERIC
+        }
         all_stats.append(stats)
 
     global_params = {}
@@ -162,7 +137,8 @@ def main() -> None:
         S  = sum(s[col]["sum"]    for s in all_stats)
         SQ = sum(s[col]["sum_sq"] for s in all_stats)
         mean = S / N
-        std  = max(np.sqrt(SQ/N - mean**2), 1e-8)
+        variance = max(SQ / N - mean**2, 0.0)
+        std  = max(np.sqrt(variance), 1e-8)
         global_params[col] = {"mean": round(mean, 6), "std": round(std, 6)}
         print(f"  {col:25s}: mean={mean:12.4f}, std={std:12.4f}")
 
@@ -186,7 +162,8 @@ def main() -> None:
         c.to_parquet(out_path, index=False)
 
         # Validation
-        assert abs(c[NUMERIC[0]].mean()) < 0.5, f"Normalization off for client {cid}"
+        assert c[NUMERIC].notna().all().all(), f"Normalization produced NaN values for client {cid}"
+        assert np.isfinite(c[NUMERIC].values).all(), f"Normalization produced non-finite values for client {cid}"
         print(f"  Client {cid}: saved {len(c):,} rows → {out_path}")
 
     print("\n✓ IEEE-CIS data pipeline complete.")

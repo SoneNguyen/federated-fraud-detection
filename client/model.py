@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 with open("contracts/schema.json") as f:
-    INPUT_DIM = json.load(f)["feature_schema"]["total_features"]  # 17 (expanded from 11)
+    INPUT_DIM = json.load(f)["feature_schema"]["total_features"]  # 13 (model input features)
 
 
 class FraudMLP(nn.Module):
@@ -17,24 +17,23 @@ class FraudMLP(nn.Module):
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
         
-        # Enhanced architecture for 17 features:
-        # - Input: 17 features
-        # - Hidden1: 512 (increased from 512, more capacity for richer feature set)
-        # - Hidden2: 256 (same)
-        # - Hidden3: 128 (new layer for better feature interaction)
+        # Architecture for 13 input features:
+        # - Input: 13 features
+        # - Hidden1: 256
+        # - Hidden2: 128
+        # - Hidden3: 64
         # - Output: 1 (fraud probability)
         self.net = nn.Sequential(
-            nn.Linear(INPUT_DIM, 512), nn.BatchNorm1d(512),
-            nn.ReLU(), nn.Dropout(0.4),
-            
-            nn.Linear(512, 256), nn.BatchNorm1d(256),
-            nn.ReLU(), nn.Dropout(0.3),
-            
-            nn.Linear(256, 128), nn.BatchNorm1d(128),
+            nn.Linear(INPUT_DIM, 256), nn.BatchNorm1d(256),
             nn.ReLU(), nn.Dropout(0.2),
             
-            nn.Linear(128, 64), nn.ReLU(),
-            nn.Linear(64, 1), nn.Sigmoid()
+            nn.Linear(256, 128), nn.BatchNorm1d(128),
+            nn.ReLU(), nn.Dropout(0.15),
+            
+            nn.Linear(128, 64), nn.BatchNorm1d(64),
+            nn.ReLU(), nn.Dropout(0.1),
+            
+            nn.Linear(64, 1)
         ).to(self.device)
     
     def forward(self, x):
