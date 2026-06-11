@@ -58,6 +58,19 @@ def _load_initial_parameters(ckpt: CheckpointManager):
     logger.info(f"Successfully loaded checkpoint with {len(keys)} parameter groups")
     return ndarrays_to_parameters(nds)
 
+def lr_schedule(server_round: int) -> dict:
+    if server_round <= 5:
+        lr = 2e-3
+    elif server_round <= 15:
+        lr = 1e-3
+    elif server_round <= 25:
+        lr = 5e-4
+    elif server_round <= 35:
+        lr = 2e-4
+    else:
+        lr = 1e-4
+    return {"lr": lr, "local_epochs": 5}
+
 
 def main() -> None:
     logger.info("Starting Flower Server")
@@ -67,7 +80,8 @@ def main() -> None:
     ckpt = CheckpointManager("checkpoints")
     initial_parameters = _load_initial_parameters(ckpt)
 
-    strategy = WeightedFedAvg()
+    
+    strategy = WeightedFedAvg(on_fit_config_fn = lr_schedule,)
     # Attach initial parameters to the strategy if available (start_server
     # implementations may not accept an `initial_parameters` kwarg).
     if initial_parameters is not None:
@@ -80,7 +94,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("Flower Server Configuration")
     logger.info("=" * 60)
-    num_rounds = int(os.environ.get("NUM_ROUNDS", "15"))
+    num_rounds = int(os.environ.get("NUM_ROUNDS", "40"))
     server_address = os.environ.get("SERVER_ADDRESS", "localhost:8080")
     logger.info(f"Server address: {server_address}")
     logger.info(f"Number of rounds: {num_rounds}")

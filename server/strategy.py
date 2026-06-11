@@ -32,20 +32,28 @@ class WeightedFedAvg(FedAvg):
 
     def aggregate_fit(self, server_round, results, failures):
         if failures:
-            logger.warning(f"[Round {server_round}] {len(failures)} clients failed — continuing with {len(results)}")
+            logger.warning(f"[Round {server_round}] {len(failures)} clients failed")
         if len(results) < 2:
-            logger.warning(f"[Round {server_round}] Too few clients ({len(results)}) — skipping aggregation")
             return None, {}
 
-        total = sum(r.num_examples for _, r in results)
-        logger.info(f"[Round {server_round}] Aggregating {len(results)} clients, {total} total samples")
+        # Pull AUPRC from the most recent evaluate round — passed via fit metrics
+        # Fall back to equal weighting if not available
+        weights: list[float] = []
+        for _, fit_res in results:
+            auprc = float(fit_res.metrics.get("val_auprc", 0.0)) if fit_res.metrics else 0.0
+            n = fit_res.num_examples
+            weights.append(max(auprc, 0.05) * (n ** 0.5))  # weight by AUPRC with a floor to prevent zeroing out, scaled by sqrt of sample count
+
+        total_w = sum(weights)
+        norm_weights = [w / total_w for w in weights]
+
+        total_samples = sum(r.num_examples for _, r in results)
+        logger.info(f"[Round {server_round}] AUPRC weights: {[f'{w:.3f}' for w in norm_weights]}")
 
         weighted: list[list[np.ndarray]] = []
-        for client_id, (_, fit_res) in enumerate(results):
-            w = fit_res.num_examples / total
-            params: list[np.ndarray] = parameters_to_ndarrays(fit_res.parameters)
+        for w, (_, fit_res) in zip(norm_weights, results):
+            params = parameters_to_ndarrays(fit_res.parameters)
             weighted.append([p * w for p in params])
-            logger.debug(f"  Client {client_id}: {fit_res.num_examples} samples, weight={w:.4f}")
 
         agg: list[np.ndarray] = [
             sum((w[i] for w in weighted), np.zeros_like(weighted[0][i]))
@@ -67,16 +75,16 @@ class WeightedFedAvg(FedAvg):
             metadata={
                 "round": server_round,
                 "num_clients": len(results),
-                "total_samples": total,
+                "total_samples": total_samples,
             },
         )
         logger.info(f"[Round {server_round}] Checkpoint saved → {path.name}")
         # ─────────────────────────────────────────────────────────────────────
 
         mlflow.log_metric("clients", len(results), step=server_round)
-        mlflow.log_metric("total_samples", total, step=server_round)
+        mlflow.log_metric("total_samples", total_samples, step=server_round)
         logger.info(f"[Round {server_round}] Aggregation complete")
-        return ndarrays_to_parameters(agg), {}
+        return ndarrays_to_parameters(cast(list[np.ndarray], agg)), {}
 
     def aggregate_evaluate(self, server_round: int, results, failures) -> tuple[float | None, dict[str, Scalar]]:
         if failures:

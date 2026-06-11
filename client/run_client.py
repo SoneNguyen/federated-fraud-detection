@@ -30,7 +30,6 @@ def main():
     print(f"  - Train samples: {len(cast(Sized, train_l.dataset))}")
     print(f"  - Val samples: {len(cast(Sized, val_l.dataset))}")
     print(f"  - Local epochs: {epochs}")
-    
     local_epochs = epochs
     lr = float(os.environ.get("LOCAL_LR", "1e-3"))
     weight_decay = float(os.environ.get("WEIGHT_DECAY", "1e-4"))

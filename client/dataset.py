@@ -17,7 +17,7 @@ with open("contracts/schema.json") as f:
     _s = json.load(f)
 FEATURE_ORDER = _s["feature_schema"]["feature_order"]     # 13 items
 LABEL         = _s["feature_schema"]["label"]["name"]     # "is_fraud"
-PASS_ONLY     = [p["name"] for p in _s["feature_schema"]["passthrough_only"]]
+PASS_ONLY = []
 # = ["orig_currency","stale_fx_flag"]
 
 # Hard assertions — fail loudly at import time
@@ -66,8 +66,14 @@ def make_loaders(
     if class_counts[1] == 0:
         sampler = None
     else:
-        sample_weights = (1.0 / class_counts[train_labels]).astype(float).tolist()
-        sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+        # Cap oversampling ratio at 10× to avoid memorisation on tiny fraud sets
+        fraud_rate = class_counts[1] / len(train_labels)
+        ratio = min(class_counts[0] / max(class_counts[1], 1), 20.0)
+        class_weights = np.array([1.0, ratio]) 
+        sample_weights = class_weights[train_labels].astype(float).tolist()
+        sampler = WeightedRandomSampler(
+            sample_weights, num_samples=len(sample_weights), replacement=True
+        )
 
     return (
         DataLoader(

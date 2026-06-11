@@ -1,46 +1,60 @@
 {
   "feature_schema": {
-    "version": "3.0",
-    "reference_currency": "USD",
-    "fx_cache_ttl_sec": 900,
+    "version": "5.0",
     "numeric_features": [
       {"name":"tx_amount_usd",       "dtype":"float32","range":[0,1000000]},
       {"name":"tx_count_1h",         "dtype":"float32","range":[0,500]},
       {"name":"tx_count_24h",        "dtype":"float32","range":[0,5000]},
       {"name":"tx_volume_1h_usd",    "dtype":"float32","range":[0,500000]},
       {"name":"tx_volume_24h_usd",   "dtype":"float32","range":[0,5000000]},
-      {"name":"merchant_cat_dev",    "dtype":"float32","range":[-5,5]},
       {"name":"geo_velocity_kmh",    "dtype":"float32","range":[0,2000]},
       {"name":"dist2_km",            "dtype":"float32","range":[0,100]},
       {"name":"card6_code",          "dtype":"float32","range":[0,4]},
       {"name":"days_since_last_tx",  "dtype":"float32","range":[0,365]},
       {"name":"account_age_days",    "dtype":"float32","range":[0,10000]},
-      {"name":"hour_of_day_local","dtype":"float32","range":[0,23]},
-      {"name":"day_of_week",        "dtype":"float32","range":[0,6]}
+      {"name":"hour_of_day_local",   "dtype":"float32","range":[0,23]},
+      {"name":"day_of_week",         "dtype":"float32","range":[0,6]},
+      {"name":"prod_W",              "dtype":"float32","range":[0,1]},
+      {"name":"prod_H",              "dtype":"float32","range":[0,1]},
+      {"name":"prod_C",              "dtype":"float32","range":[0,1]},
+      {"name":"prod_S",              "dtype":"float32","range":[0,1]},
+      {"name":"prod_R",              "dtype":"float32","range":[0,1]},
+      {"name":"card1_norm",          "dtype":"float32","range":[0,10]},
+      {"name":"card2_norm",          "dtype":"float32","range":[0,7]},
+      {"name":"addr1_norm",          "dtype":"float32","range":[0,7]},
+      {"name":"addr2_norm",          "dtype":"float32","range":[0,100]},
+      {"name":"V258",                "dtype":"float32","range":[-100,100]},
+      {"name":"V257",                "dtype":"float32","range":[-100,100]},
+      {"name":"V201",                "dtype":"float32","range":[-100,100]},
+      {"name":"M4_flag",             "dtype":"float32","range":[0,1]},
+      {"name":"M6_flag",             "dtype":"float32","range":[0,1]},
+      {"name":"c5_chargeback",       "dtype":"float32","range":[0,5]},
+      {"name":"email_domain_match",  "dtype":"float32","range":[0,1]},
+      {"name":"p_email_free",        "dtype":"float32","range":[0,1]},
+      {"name":"r_email_free",        "dtype":"float32","range":[0,1]},
+      {"name":"card3_norm",          "dtype":"float32","range":[0,200]},
+      {"name":"card4_code",          "dtype":"float32","range":[0,4]}
     ],
-    "passthrough_features": [],
-    "passthrough_only": [
-      {"name":"orig_currency","dtype":"str","format":"ISO 4217"},
-      {"name":"stale_fx_flag","dtype":"int8","values":[0,1]}
-    ],
-    "label":{"name":"is_fraud","dtype":"int8","values":[0,1]},
-    "total_features": 13,
+    "label": {"name":"is_fraud","dtype":"int8","values":[0,1]},
+    "total_features": 32,
     "feature_order": [
       "tx_amount_usd","tx_count_1h","tx_count_24h",
-      "tx_volume_1h_usd","tx_volume_24h_usd","merchant_cat_dev",
+      "tx_volume_1h_usd","tx_volume_24h_usd",
       "geo_velocity_kmh","dist2_km","card6_code",
       "days_since_last_tx","account_age_days",
-      "hour_of_day_local","day_of_week"
+      "hour_of_day_local","day_of_week",
+      "prod_W","prod_H","prod_C","prod_S","prod_R",
+      "card1_norm","card2_norm","addr1_norm","addr2_norm",
+      "V258","V257","V201",
+      "M4_flag","M6_flag","c5_chargeback",
+      "email_domain_match","p_email_free","r_email_free",
+      "card3_norm","card4_code"
     ]
   },
   "model_output": {
-    "fraud_probability":{"dtype":"float32","range":[0.0,1.0]},
-    "prediction":       {"dtype":"int8","threshold":0.5},
-    "model_version":    {"dtype":"str"},
-    "metadata": {
-      "stale_fx_flag":  {"dtype":"int8"},
-      "orig_currency":  {"dtype":"str"}
-    }
+    "fraud_probability": {"dtype":"float32","range":[0.0,1.0]},
+    "prediction":        {"dtype":"int8","threshold":0.5},
+    "model_version":     {"dtype":"str"}
   },
   "drift_report": {
     "timestamp":          "ISO8601 UTC string",
@@ -48,7 +62,6 @@
     "feature_ks_pval":    "dict[feature_name -> float]",
     "severity":           "enum: INFO | WARNING | CRITICAL",
     "triggered_features": "list[feature_name]",
-    "score_shift":        "float",
-    "stale_fx_rate":      "float"
+    "score_shift":        "float"
   }
 }

@@ -6,6 +6,7 @@ import os
 from flwr.client import NumPyClient
 from flwr.common import Scalar
 import numpy as np
+from pydantic import config
 import torch
 import torch.nn.functional as F
 from sklearn.metrics import average_precision_score, roc_auc_score, precision_recall_curve, f1_score
@@ -50,7 +51,10 @@ class FocalLoss(torch.nn.Module):
 
 
 class FraudClient(NumPyClient):
-    """Federated learning client for fraud detection with focal loss."""
+    """Federated learning client for fraud detection with focal loss.
+    
+    Supports client-specific hyperparameters for addressing data heterogeneity.
+    """
 
     def __init__(self, model: torch.nn.Module, train_loader, val_loader, local_epochs: int = 2, lr: float = 1e-3, weight_decay: float = 1e-4):
         self.model = model
@@ -59,7 +63,7 @@ class FraudClient(NumPyClient):
         self.local_epochs = local_epochs
         self.lr = lr
         self.weight_decay = weight_decay
-        self.focal_loss = FocalLoss(alpha=0.5, gamma=2.0)
+        self.focal_loss = FocalLoss(alpha=0.75, gamma=3.0)
 
     def get_parameters(self, config: dict = {}) -> list[np.ndarray]:
         return [val.cpu().numpy() for _, val in self.model.state_dict().items()]
@@ -72,23 +76,40 @@ class FraudClient(NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
+        # Quick self-eval to report AUPRC for server-side weighting
+        self.model.eval()
+        all_probs, all_targets = [], []
+        with torch.no_grad():
+            for X, y in self.val_loader:
+                X, y = X.to(self.model.device), y.to(self.model.device)
+                probs = torch.sigmoid(self.model(X).squeeze())
+                all_probs.append(probs.cpu().numpy())
+                all_targets.append(y.cpu().numpy())
+        y_true = np.concatenate(all_targets)
+        y_prob = np.concatenate(all_probs)
+        fit_metrics = {}
+        if len(np.unique(y_true)) > 1:
+            from sklearn.metrics import average_precision_score
+            fit_metrics["val_auprc"] = float(average_precision_score(y_true, y_prob))
+        logger.info(f"FIT AUPRC={fit_metrics.get('val_auprc', 0):.4f}")
+
         self.model.train()
         lr = float(config.get("lr", self.lr))
         weight_decay = float(config.get("weight_decay", self.weight_decay))
+        epochs = int(config.get("local_epochs", self.local_epochs))
+
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=lr,
-            weight_decay=weight_decay,
+            weight_decay=weight_decay
         )
-        epochs = int(config.get("local_epochs", self.local_epochs))
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs), eta_min=1e-5)
-        logger.info(f"START TRAINING | epochs={epochs}, lr={lr:.6f}, weight_decay={weight_decay:.6f}, samples={len(cast(Sized, self.train_loader.dataset))}")
+        # No per-round scheduler — the LR is already managed globally via config
+        logger.info(f"START TRAINING | epochs={epochs}, lr={lr:.6f}, ...")
 
         for epoch in range(1, epochs + 1):
             epoch_loss = 0.0
             batch_count = 0
-            
-            for batch_idx, (X, y) in enumerate(self.train_loader):
+            for X, y in self.train_loader:
                 X, y = X.to(self.model.device), y.to(self.model.device)
                 optimizer.zero_grad()
                 pred = self.model(X).squeeze()
@@ -96,15 +117,14 @@ class FraudClient(NumPyClient):
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 optimizer.step()
-                
                 epoch_loss += loss.item()
                 batch_count += 1
-            scheduler.step()
+
             avg_epoch_loss = epoch_loss / max(batch_count, 1)
-            logger.info(f"EPOCH {epoch}/{epochs} | loss={avg_epoch_loss:.6f} | lr={scheduler.get_last_lr()[0]:.6f}")
+            logger.info(f"EPOCH {epoch}/{epochs} | loss={avg_epoch_loss:.6f} | lr={lr:.6f}")
 
         logger.info("TRAINING COMPLETE")
-        return self.get_parameters(), len(cast(Sized, self.train_loader.dataset)), {}
+        return self.get_parameters(), len(cast(Sized, self.train_loader.dataset)), fit_metrics
 
     def evaluate(self, parameters, config) -> tuple[float, int, dict[str, Scalar]]:
         self.set_parameters(parameters)
