@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from client.fl_client import FraudClient
-from client.model import FraudMLP
+from src.client.client import FraudClient
+from src.model.fraud_mlp import FraudMLP
 
 
 class TestFraudClient(unittest.TestCase):
@@ -16,7 +16,7 @@ class TestFraudClient(unittest.TestCase):
     def setUp(self):
         self.model = FraudMLP()
 
-        first_layer = self.model.net[0]
+        first_layer = self.model.input_proj
         assert isinstance(first_layer, nn.Linear), "Expected first layer to be nn.Linear"
         in_features: int = first_layer.in_features  # ← now typed as int, not Module
 

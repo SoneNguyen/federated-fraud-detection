@@ -16,7 +16,6 @@ VALID_PAYLOAD = {
     "tx_count_24h": 4,
     "tx_volume_1h_usd": 85.0,
     "tx_volume_24h_usd": 340.0,
-    "merchant_cat_dev": -0.1,
     "geo_velocity_kmh": 5.0,
     "dist2_km": 2.0,
     "card6_code": 1,
@@ -24,6 +23,28 @@ VALID_PAYLOAD = {
     "account_age_days": 1200,
     "hour_of_day_local": 10,
     "day_of_week": 1,
+    "tx_time_norm": 0.42,
+    "week_of_period": 0.12,
+    "prod_W": 0.0,
+    "prod_H": 1.0,
+    "prod_C": 0.0,
+    "prod_S": 0.0,
+    "prod_R": 0.0,
+    "card1_norm": 2.0,
+    "card2_norm": 1.0,
+    "addr1_norm": 50.0,
+    "addr2_norm": 3.0,
+    "V258": 0.0,
+    "V257": 0.0,
+    "V201": 0.0,
+    "M4_flag": 1.0,
+    "M6_flag": 0.0,
+    "c5_chargeback": 0.0,
+    "email_domain_match": 1.0,
+    "p_email_free": 1.0,
+    "r_email_free": 1.0,
+    "card3_norm": 25.0,
+    "card4_code": 1,
     "orig_currency": "USD",
     "stale_fx_flag": 0,
 }
@@ -45,7 +66,7 @@ NORM_PARAMS = {
 
 def _make_client(tmp_path: Path, fraud_prob: float = 0.05):
     """Create a TestClient with a mocked model and checkpoint."""
-    from client.model import FraudMLP
+    from src.model.fraud_mlp import FraudMLP
 
     # Write a real checkpoint so _load_latest_model() finds it
     ckpt_dir = tmp_path / "checkpoints"

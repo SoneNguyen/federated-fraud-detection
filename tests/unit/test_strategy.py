@@ -11,7 +11,7 @@ from flwr.common import Parameters, ndarrays_to_parameters, parameters_to_ndarra
 from flwr.server.client_proxy import ClientProxy
 from flwr.common.typing import FitRes
 
-from server.strategy import WeightedFedAvg
+from src.server.strategy import WeightedFedAvg
 
 
 class DummyFitRes:
@@ -44,7 +44,9 @@ class TestWeightedFedAvg(unittest.TestCase):
         self.assertEqual(len(arrays), 1)
         np.testing.assert_allclose(arrays[0], np.array([1.0, 2.0], dtype=np.float32))
         self.assertEqual(info, {})
-        mock_log_metric.assert_called_once_with("clients", 2, step=1)
+        self.assertEqual(mock_log_metric.call_count, 2)
+        mock_log_metric.assert_any_call("clients", 2, step=1)
+        mock_log_metric.assert_any_call("total_samples", 8, step=1)
 
 
 if __name__ == "__main__":

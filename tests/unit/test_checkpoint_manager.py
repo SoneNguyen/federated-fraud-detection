@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from server.checkpoint_manager import CheckpointManager
+from src.server.checkpoint_manager import CheckpointManager
 
 
 def test_checkpoint_manager_rollback_without_checkpoints(tmp_path: Path):

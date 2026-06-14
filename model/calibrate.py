@@ -20,8 +20,8 @@ import torch
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 
-from client.dataset import FEATURE_ORDER, LABEL, make_loaders
-from client.model import FraudMLP
+from src.data.dataset import FEATURE_ORDER, LABEL, make_loaders
+from src.model.fraud_mlp import FraudMLP
 
 
 def get_raw_scores(model: torch.nn.Module, parquet_path: str,
@@ -40,7 +40,8 @@ def get_raw_scores(model: torch.nn.Module, parquet_path: str,
 
     model.eval()
     with torch.no_grad():
-        probs = model(X).numpy().squeeze()
+        X = X.to(getattr(model, "device", torch.device("cpu")))
+        probs = torch.sigmoid(model(X)).cpu().numpy().squeeze()
 
     return probs, y
 

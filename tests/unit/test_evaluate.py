@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 import torch
 
-from client.dataset import FEATURE_ORDER, LABEL
-from client.model import FraudMLP
+from src.data.dataset import FEATURE_ORDER, LABEL
+from src.model.fraud_mlp import FraudMLP
 from model.evaluate import eval_model, load_test
 
 
@@ -62,7 +62,9 @@ def test_eval_model_schema_version(tmp_path):
     X = torch.randn(100, len(FEATURE_ORDER))
     y = np.array([1] * 5 + [0] * 95)
     result = eval_model(model, X, y)
-    assert result["schema_version"] == "3.0"
+    with open("config/schema.json") as f:
+        schema = json.load(f)
+    assert result["schema_version"] == schema["feature_schema"]["version"]
 
 
 def test_load_test_split_fraction(tmp_path):

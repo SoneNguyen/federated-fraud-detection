@@ -6,8 +6,8 @@ import pytest
 import torch
 from pathlib import Path
 
-from client.dataset import FEATURE_ORDER, LABEL
-from client.model import FraudMLP
+from src.data.dataset import FEATURE_ORDER, LABEL
+from src.model.fraud_mlp import FraudMLP
 from model.calibrate import (
     apply_calibration,
     calibrate,

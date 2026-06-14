@@ -14,10 +14,10 @@ from sklearn.metrics import (
     precision_recall_curve,
     f1_score,
 )
-from client.model import FraudMLP
-from client.dataset import FEATURE_ORDER, LABEL
+from src.model.fraud_mlp import FraudMLP
+from src.data.dataset import FEATURE_ORDER, LABEL
 
-with open("contracts/normalization_params.json") as f:
+with open("config/normalization_params.json") as f:
     NORM = json.load(f)
 NUMERIC = list(NORM.keys())
 

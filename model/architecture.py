@@ -1,9 +1,16 @@
-"""Re-exports FraudMLP from client.model.
+"""⚠️ DEPRECATED: Re-export module superseded by direct imports
 
-The model is defined in client/model.py so the FL client can import it
-without depending on the model/ package. This module re-exports it so
-evaluation and serving code can use a clean model.architecture import path.
+DO NOT USE. This file is a legacy re-export layer.
+
+Instead of:
+    from model.architecture import FraudMLP, INPUT_DIM
+
+Use:
+    from src.model.fraud_mlp import FraudMLP, INPUT_DIM
+
+This file will be removed in a future version.
+Can be safely deleted once all imports are migrated.
 """
-from client.model import FraudMLP, INPUT_DIM
+from src.model.fraud_mlp import FraudMLP, INPUT_DIM
 
 __all__ = ["FraudMLP", "INPUT_DIM"]

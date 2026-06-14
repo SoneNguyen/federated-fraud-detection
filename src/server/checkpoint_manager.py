@@ -1,3 +1,5 @@
+"""Checkpoint manager for federated learning server."""
+
 from __future__ import annotations
 
 import json
@@ -12,7 +14,7 @@ import torch
 class CheckpointManager:
     """Manages checkpoint storage and rollback semantics for server workflows."""
 
-    def __init__(self, checkpoint_dir: Path | str = "checkpoints"):
+    def __init__(self, checkpoint_dir: Path | str = "outputs\\checkpoints"):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 

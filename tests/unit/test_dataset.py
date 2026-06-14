@@ -9,7 +9,7 @@ import torch
 from collections.abc import Sized
 from typing import cast
 
-from client.dataset import FEATURE_ORDER, LABEL, FraudDataset, make_loaders
+from src.data.dataset import FEATURE_ORDER, LABEL, FraudDataset, make_loaders
 
 
 def _write_parquet(path: Path, n: int = 1000, fraud_rate: float = 0.02) -> Path:

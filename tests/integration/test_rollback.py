@@ -2,7 +2,7 @@
 from pathlib import Path
 import pytest
 import torch
-from server.checkpoint_manager import CheckpointManager
+from src.server.checkpoint_manager import CheckpointManager
 from drift.alert_manager import AlertManager
 from drift.detectors import DriftReport
 

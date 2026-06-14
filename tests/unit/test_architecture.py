@@ -1,7 +1,7 @@
 """Tests for model/architecture.py re-exports."""
 import unittest
 
-from model.architecture import FraudMLP, INPUT_DIM
+from src.model.fraud_mlp import FraudMLP, INPUT_DIM
 
 
 class TestArchitecture(unittest.TestCase):
@@ -13,7 +13,7 @@ class TestArchitecture(unittest.TestCase):
 
     def test_input_dim_imported(self):
         """INPUT_DIM should be available from model.architecture."""
-        assert INPUT_DIM == 13
+        assert INPUT_DIM == 34
 
 
 if __name__ == "__main__":

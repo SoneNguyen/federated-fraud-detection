@@ -2,6 +2,8 @@
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
+from src.data.dataset import FEATURE_ORDER
+
 
 class Transaction(BaseModel):
     tx_amount_usd:       float
@@ -9,7 +11,6 @@ class Transaction(BaseModel):
     tx_count_24h:        int
     tx_volume_1h_usd:    float
     tx_volume_24h_usd:   float
-    merchant_cat_dev:    float
     geo_velocity_kmh:    float
     dist2_km:            float
     card6_code:          int
@@ -17,6 +18,28 @@ class Transaction(BaseModel):
     account_age_days:    int
     hour_of_day_local:   int
     day_of_week:         int
+    tx_time_norm:        float
+    week_of_period:      float
+    prod_W:              float
+    prod_H:              float
+    prod_C:              float
+    prod_S:              float
+    prod_R:              float
+    card1_norm:          float
+    card2_norm:          float
+    addr1_norm:          float
+    addr2_norm:          float
+    V258:                float
+    V257:                float
+    V201:                float
+    M4_flag:             float
+    M6_flag:             float
+    c5_chargeback:       float
+    email_domain_match:  float
+    p_email_free:        float
+    r_email_free:        float
+    card3_norm:          float
+    card4_code:          int
 
     # Passthrough metadata — not model inputs
     orig_currency:       Optional[str] = "USD"
@@ -68,12 +91,3 @@ class Prediction(BaseModel):
     prediction:        int
     model_version:     str
     metadata:          PredictionMetadata
-
-
-FEATURE_ORDER = [
-    "tx_amount_usd", "tx_count_1h", "tx_count_24h",
-    "tx_volume_1h_usd", "tx_volume_24h_usd", "merchant_cat_dev",
-    "geo_velocity_kmh", "dist2_km", "card6_code",
-    "days_since_last_tx", "account_age_days",
-    "hour_of_day_local", "day_of_week",
-]  # 13 — matches schema

@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException
 
 from api.middleware import AccessLogMiddleware, RateLimitMiddleware
 from api.schemas import FEATURE_ORDER, Prediction, PredictionMetadata, Transaction
-from client.model import FraudMLP
+from src.model.fraud_mlp import FraudMLP
 
 logger = logging.getLogger("api.main")
 
@@ -42,7 +42,7 @@ _norm_params: dict = {}
 _model_version: str = "not_loaded"
 
 CHECKPOINT_DIR   = Path("checkpoints")
-NORM_PARAMS_PATH = Path("contracts/normalization_params.json")
+NORM_PARAMS_PATH = Path("config/normalization_params.json")
 NUMERIC_COLS     = [
     "tx_amount_usd", "tx_count_1h", "tx_count_24h",
     "tx_volume_1h_usd", "tx_volume_24h_usd", "merchant_cat_dev",
@@ -140,9 +140,9 @@ async def predict(tx: Transaction) -> Prediction:
             v = (v - _norm_params[col]["mean"]) / _norm_params[col]["std"]
         features.append(v)
 
-    x = torch.tensor([features], dtype=torch.float32)
+    x = torch.tensor([features], dtype=torch.float32, device=_model.device)
     with torch.no_grad():
-        prob = float(_model(x).squeeze())
+        prob = float(torch.sigmoid(_model(x)).squeeze())
 
     return Prediction(
         fraud_probability=round(prob, 6),

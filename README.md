@@ -72,7 +72,7 @@ The federated training loop uses `server/fl_server.py` and `client/run_client.py
 Open a terminal and run:
 
 ```powershell
-uv run python server/fl_server.py
+uv run python -m scripts.run_server
 ```
 
 The server:
@@ -92,7 +92,7 @@ Client 0:
 ```powershell
 $env:CLIENT_ID = 0
 $env:DATA_PATH = "data/processed/client_0/transactions_normalized.parquet"
-uv run python client/run_client.py
+uv run python -m scripts.run_client 
 ```
 
 Client 1:
@@ -100,7 +100,7 @@ Client 1:
 ```powershell
 $env:CLIENT_ID = 1
 $env:DATA_PATH = "data/processed/client_1/transactions_normalized.parquet"
-uv run python client/run_client.py
+uv run python -m scripts.run_client 
 ```
 
 Client 2:
@@ -108,7 +108,7 @@ Client 2:
 ```powershell
 $env:CLIENT_ID = 2
 $env:DATA_PATH = "data/processed/client_2/transactions_normalized.parquet"
-uv run python client/run_client.py
+uv run python -m scripts.run_client 
 ```
 
 Each client:

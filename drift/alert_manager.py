@@ -6,7 +6,7 @@ from pathlib import Path
 
 from drift.detectors import DriftReport
 from drift.prediction_monitor import PredictionDriftReport
-from server.checkpoint_manager import CheckpointManager
+from src.server.checkpoint_manager import CheckpointManager
 
 class AlertManager:
     STALE_FX_WARN = 0.50  # >50% stale predictions → FX pipeline issue
