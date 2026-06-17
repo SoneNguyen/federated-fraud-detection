@@ -33,7 +33,8 @@ class FocalLoss(torch.nn.Module):
     which is important in federated setting where each client sees fewer fraud
     samples per round. gamma=3.0 over-focuses and starves gradients early.
 
-    alpha=0.75 keeps the positive-class weight meaningful without being extreme.
+    alpha=0.5 (reduced from 0.75) — less aggressive weighting of positive class,
+    allowing natural data distribution to guide training better.
     """
     def __init__(self, alpha: float, gamma: float = 2.0):
         super().__init__()
@@ -55,10 +56,9 @@ def make_weighted_sampler(labels: np.ndarray) -> WeightedRandomSampler:
     Return a WeightedRandomSampler that oversamples the minority (fraud) class
     to improve gradient signal without over-distorting the training distribution.
 
-    Strategy: oversample positives by at most 5× their natural rate.
-    This keeps the training distribution close enough to the real one that
-    threshold calibration isn't blown out on low-fraud clients (C0 at 2%),
-    while still providing enough fraud samples for stable gradients.
+    Strategy: oversample positives by at most 2.5× their natural rate,
+    capped at 15% (less aggressive than before). This keeps the training
+    distribution much closer to the real one, improving calibration.
     """
     n_neg = (labels == 0).sum()
     n_pos = (labels == 1).sum()
@@ -71,9 +71,9 @@ def make_weighted_sampler(labels: np.ndarray) -> WeightedRandomSampler:
         )
 
     natural_rate = n_pos / len(labels)
-    # Target: oversample positives by at most 5× their natural rate,
-    # capped at 30% (never floor above natural prevalence).
-    target_rate = min(natural_rate * 5.0, 0.30)
+    # Target: oversample positives by at most 2.5× their natural rate,
+    # capped at 15% (down from 30%).
+    target_rate = min(natural_rate * 2.5, 0.15)
 
     w_pos = target_rate / n_pos
     w_neg = (1.0 - target_rate) / max(n_neg, 1)
@@ -112,7 +112,7 @@ class FraudClient(NumPyClient):
         self.lr           = lr
         self.weight_decay = weight_decay
         self.batch_size   = batch_size
-        self.focal_loss   = FocalLoss(alpha=0.75, gamma=2.0)
+        self.focal_loss   = FocalLoss(alpha=0.5, gamma=2.0)
 
         # If train_dataset is a DataLoader, extract the underlying dataset
         if isinstance(train_dataset, DataLoader):

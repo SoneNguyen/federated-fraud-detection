@@ -27,6 +27,22 @@
         "mean": 0.25751661,
         "std": 1.13923787
     },
+    "amount_x_velocity": {
+        "mean": 0.28282824,
+        "std": 0.87488517
+    },
+    "amount_per_tx_1h": {
+        "mean": 3.13198395,
+        "std": 1.35882911
+    },
+    "amount_per_tx_24h": {
+        "mean": 3.12082219,
+        "std": 1.41106774
+    },
+    "spending_velocity_1h": {
+        "mean": 4.06611349,
+        "std": 0.84379484
+    },
     "card6_debit": {
         "mean": 0.74497578,
         "std": 0.43587483
@@ -67,6 +83,18 @@
         "mean": 0.50805981,
         "std": 0.29333677
     },
+    "risky_hour_flag": {
+        "mean": 0.24158567,
+        "std": 0.42804443
+    },
+    "early_morning_high_value": {
+        "mean": 0.04503844,
+        "std": 0.20738847
+    },
+    "weekend_high_value": {
+        "mean": 0.28276662,
+        "std": 0.45034393
+    },
     "card1_norm": {
         "mean": 9.02482358,
         "std": 0.66392733
@@ -99,6 +127,10 @@
         "mean": 0.50106056,
         "std": 0.97182669
     },
+    "both_emails_free": {
+        "mean": 0.15288719,
+        "std": 0.35987872
+    },
     "card3_norm": {
         "mean": 152.7660277,
         "std": 13.6973928
@@ -106,5 +138,17 @@
     "card4_code": {
         "mean": 0.39308768,
         "std": 0.60530582
+    },
+    "has_device_info": {
+        "mean": 0.2009449,
+        "std": 0.40070693
+    },
+    "card_device_mismatch": {
+        "mean": 0.19675213,
+        "std": 0.39754336
+    },
+    "new_account_high_value": {
+        "mean": 0.16435466,
+        "std": 0.37059709
     }
 }

@@ -34,6 +34,13 @@ def engineer(df: pd.DataFrame, tx_ref: pd.DataFrame) -> pd.DataFrame:
     """
     Transform raw merged IEEE-CIS columns into the model feature vector.
 
+    Enhanced with interaction features and identity/device grouping signals:
+    - Amount × velocity: high-spend rapid movement pattern
+    - Amount × count interactions: spending bursts
+    - Temporal risk patterns: unusual times + high-value txns
+    - Device/identity consistency: same device/IP but different card
+    - Email domain reputation: free vs enterprise
+
     All intermediate arithmetic is done in float64; final cast to float32
     for storage efficiency. Missing-value indicators are float32 {0, 1}.
     """
@@ -62,6 +69,19 @@ def engineer(df: pd.DataFrame, tx_ref: pd.DataFrame) -> pd.DataFrame:
 
     dist2 = df["dist2"].fillna(0).clip(0, 10000).astype("float64")
     out["dist2_km"] = np.log1p(dist2 * 1.60934).astype("float32")
+    
+    # ── NEW: Amount × velocity interaction (high-risk combo) ──────────────────
+    amount_x_velocity = np.log1p(raw_amount) * np.log1p(
+        ((dist * 1.60934) / (days * 24.0)).clip(0, 2000)
+    )
+    out["amount_x_velocity"] = (amount_x_velocity / (1 + amount_x_velocity.std())).clip(-10, 10).astype("float32")
+    
+    # ── NEW: Amount × count interactions ───────────────────────────────────────
+    out["amount_per_tx_1h"] = (np.log1p(raw_amount) - np.log1p(raw_count_1h + 0.1)).clip(-5, 10).astype("float32")
+    out["amount_per_tx_24h"] = (np.log1p(raw_amount) - np.log1p(raw_count_24h + 0.1)).clip(-5, 10).astype("float32")
+    
+    # ── NEW: Spending burst indicator (high count but consistent amount) ───────
+    out["spending_velocity_1h"] = (np.log1p(raw_count_1h) * 0.1 + np.log1p(raw_amount) * 0.9).clip(0, 10).astype("float32")
 
     # Card type — one-hot encoding (not ordinal, which was false assumption).
     # Encode k-1=4 indicators to avoid perfect multicollinearity; unknown is reference.
@@ -80,6 +100,20 @@ def engineer(df: pd.DataFrame, tx_ref: pd.DataFrame) -> pd.DataFrame:
     out["day_of_week"]       = ((dt // 86400) % 7).astype("float32")
     out["tx_time_norm"]      = ((dt % 86400) / 86400.0).astype("float32")
     out["week_of_period"]    = ((dt % 604800) / 604800.0).astype("float32")
+    
+    # ── NEW: Temporal risk patterns ─────────────────────────────────────────────
+    # High-value transactions at unusual hours (red flag)
+    hour = (dt // 3600) % 24
+    unusual_hour = ((hour < 6) | (hour > 23)).astype("float64")
+    out["risky_hour_flag"] = unusual_hour.astype("float32")
+    
+    # Early morning high-value transactions (especially risky)
+    out["early_morning_high_value"] = (unusual_hour * (np.log1p(raw_amount) > 5)).astype("float32")
+    
+    # Weekend activity pattern
+    dow = (dt // 86400) % 7
+    is_weekend = ((dow >= 5) | (dow <= 0)).astype("float64")
+    out["weekend_high_value"] = (is_weekend * (np.log1p(raw_amount) > 4)).astype("float32")
 
     # ProductCD one-hot
     for cat in ["W", "H", "C", "S", "R"]:
@@ -99,10 +133,6 @@ def engineer(df: pd.DataFrame, tx_ref: pd.DataFrame) -> pd.DataFrame:
     out["V257"] = df["V257"].fillna(0).clip(-100, 100).astype("float32")
     out["V201"] = df["V201"].fillna(0).clip(-100, 100).astype("float32")
 
-    m_map = {"T": 1.0, "F": 0.0}
-    out["M4_flag"] = df["M4"].map(m_map).fillna(0.5).astype("float32")
-    out["M6_flag"] = df["M6"].map(m_map).fillna(0.5).astype("float32")
-
     c5 = df["C5"].fillna(0).clip(0, 100).astype("float64")
     out["c5_chargeback"] = np.log1p(c5).astype("float32")
 
@@ -115,12 +145,36 @@ def engineer(df: pd.DataFrame, tx_ref: pd.DataFrame) -> pd.DataFrame:
     out["email_domain_match"] = (p_dom == r_dom).astype("float32")
     out["p_email_free"]       = p_dom.isin(_free_mail).astype("float32")
     out["r_email_free"]       = r_dom.isin(_free_mail).astype("float32")
+    
+    # ── NEW: Email domain consistency patterns ───────────────────────────────
+    # Both free domain (suspicious combo)
+    out["both_emails_free"] = (out["p_email_free"] * out["r_email_free"]).astype("float32")
+    
+    # Email mismatch with high transaction amount (device theft indicator)
+    email_mismatch = (1 - out["email_domain_match"]).astype("float64")
+    out["email_mismatch_high_value"] = (
+        email_mismatch * (np.log1p(raw_amount) > 4.5)
+    ).astype("float32")
 
     out["card3_norm"] = df["card3"].fillna(0).clip(0, 200).astype("float32")
     card4_map = {"visa": 0, "mastercard": 1, "american express": 2, "discover": 3}
     out["card4_code"] = (
         df["card4"].str.lower().map(card4_map).fillna(4).astype("float32")
     )
+    
+    # ── NEW: Device/Identity consistency features ────────────────────────────
+    # Device ID (D2 if available, otherwise use IP)
+    has_device = df["DeviceInfo"].notna().astype("float32")
+    out["has_device_info"] = has_device
+    
+    # Card-device consistency: multiple cards on same device is suspicious
+    card_entropy = (df["card1"].fillna(-1) != df["card1"].shift().fillna(-2)).astype("float32")
+    out["card_device_mismatch"] = (has_device * card_entropy).astype("float32")
+    
+    # Account age combined with high transaction (new account fraud)
+    acct_age = np.log1p(d3)
+    new_account_high_value = (acct_age < 2) & (np.log1p(raw_amount) > 5)
+    out["new_account_high_value"] = new_account_high_value.astype("float32")
 
     # Label — stored as int8 to match schema
     out[LABEL] = df["isFraud"].astype("int8")
@@ -225,9 +279,9 @@ def main() -> None:
             f"Normalization produced NaN for client {cid}"
         assert np.isfinite(c[NORM_FEATURES].values).all(), \
             f"Normalization produced non-finite values for client {cid}"
-        print(f"  Client {cid}: saved {len(c):,} rows → {out_path}")
+        print(f"  Client {cid}: saved {len(c):,} rows to {out_path}")
 
-    print("\n✓ IEEE-CIS data pipeline complete.")
+    print("\n[COMPLETE] IEEE-CIS data pipeline complete.")
 
 
 if __name__ == "__main__":

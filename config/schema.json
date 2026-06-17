@@ -1,6 +1,6 @@
 {
   "feature_schema": {
-    "version": "5.0",
+    "version": "6.0",
     "numeric_features": [
       {"name":"tx_amount_usd",       "dtype":"float32","range":[0,1000000]},
       {"name":"tx_count_1h",         "dtype":"float32","range":[0,500]},
@@ -9,6 +9,10 @@
       {"name":"tx_volume_24h_usd",   "dtype":"float32","range":[0,5000000]},
       {"name":"geo_velocity_kmh",    "dtype":"float32","range":[0,2000]},
       {"name":"dist2_km",            "dtype":"float32","range":[0,100]},
+      {"name":"amount_x_velocity",   "dtype":"float32","range":[-10,10]},
+      {"name":"amount_per_tx_1h",    "dtype":"float32","range":[-5,10]},
+      {"name":"amount_per_tx_24h",   "dtype":"float32","range":[-5,10]},
+      {"name":"spending_velocity_1h","dtype":"float32","range":[0,10]},
       {"name":"card6_debit",         "dtype":"float32","range":[0,1]},
       {"name":"card6_credit",        "dtype":"float32","range":[0,1]},
       {"name":"card6_charge_card",   "dtype":"float32","range":[0,1]},
@@ -19,6 +23,9 @@
       {"name":"day_of_week",         "dtype":"float32","range":[0,6]},
       {"name":"tx_time_norm",        "dtype":"float32","range":[0,1]},
       {"name":"week_of_period",      "dtype":"float32","range":[0,1]},
+      {"name":"risky_hour_flag",     "dtype":"float32","range":[0,1]},
+      {"name":"early_morning_high_value","dtype":"float32","range":[0,1]},
+      {"name":"weekend_high_value",  "dtype":"float32","range":[0,1]},
       {"name":"prod_W",              "dtype":"float32","range":[0,1]},
       {"name":"prod_H",              "dtype":"float32","range":[0,1]},
       {"name":"prod_C",              "dtype":"float32","range":[0,1]},
@@ -31,30 +38,37 @@
       {"name":"V258",                "dtype":"float32","range":[-100,100]},
       {"name":"V257",                "dtype":"float32","range":[-100,100]},
       {"name":"V201",                "dtype":"float32","range":[-100,100]},
-      {"name":"M4_flag",             "dtype":"float32","range":[0,1]},
-      {"name":"M6_flag",             "dtype":"float32","range":[0,1]},
       {"name":"c5_chargeback",       "dtype":"float32","range":[0,5]},
       {"name":"email_domain_match",  "dtype":"float32","range":[0,1]},
       {"name":"p_email_free",        "dtype":"float32","range":[0,1]},
       {"name":"r_email_free",        "dtype":"float32","range":[0,1]},
+      {"name":"both_emails_free",    "dtype":"float32","range":[0,1]},
+      {"name":"email_mismatch_high_value","dtype":"float32","range":[0,1]},
       {"name":"card3_norm",          "dtype":"float32","range":[0,200]},
-      {"name":"card4_code",          "dtype":"float32","range":[0,4]}
+      {"name":"card4_code",          "dtype":"float32","range":[0,4]},
+      {"name":"has_device_info",     "dtype":"float32","range":[0,1]},
+      {"name":"card_device_mismatch","dtype":"float32","range":[0,1]},
+      {"name":"new_account_high_value","dtype":"float32","range":[0,1]}
     ],
     "label": {"name":"is_fraud","dtype":"int8","values":[0,1]},
-    "total_features": 37,
+    "total_features": 47,
     "feature_order": [
       "tx_amount_usd","tx_count_1h","tx_count_24h",
       "tx_volume_1h_usd","tx_volume_24h_usd",
       "geo_velocity_kmh","dist2_km",
+      "amount_x_velocity","amount_per_tx_1h","amount_per_tx_24h","spending_velocity_1h",
       "card6_debit","card6_credit","card6_charge_card","card6_debit_or_credit",
       "days_since_last_tx","account_age_days",
       "hour_of_day_local","day_of_week","tx_time_norm","week_of_period",
+      "risky_hour_flag","early_morning_high_value","weekend_high_value",
       "prod_W","prod_H","prod_C","prod_S","prod_R",
       "card1_norm","card2_norm","addr1_norm","addr2_norm",
       "V258","V257","V201",
-      "M4_flag","M6_flag","c5_chargeback",
+      "c5_chargeback",
       "email_domain_match","p_email_free","r_email_free",
-      "card3_norm","card4_code"
+      "both_emails_free","email_mismatch_high_value",
+      "card3_norm","card4_code",
+      "has_device_info","card_device_mismatch","new_account_high_value"
     ]
   },
   "model_output": {
