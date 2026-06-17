@@ -1,0 +1,17 @@
+{
+  "type": "weight_average",
+  "source_checkpoints": [
+    "round_080.pt",
+    "round_074.pt",
+    "round_072.pt",
+    "round_073.pt",
+    "round_085.pt",
+    "round_083.pt",
+    "round_078.pt",
+    "round_084.pt",
+    "round_081.pt",
+    "round_079.pt"
+  ],
+  "training_run_id": null,
+  "created_at": "2026-06-16T09:44:01.291943+00:00"
+}
