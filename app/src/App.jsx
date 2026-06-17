@@ -27,7 +27,10 @@ import {
   YAxis
 } from "recharts";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  (import.meta.env.DEV ? "/api" : "http://127.0.0.1:8000");
+const REQUEST_TIMEOUT_MS = 8000;
 
 const defaultForm = {
   amount: 125,
@@ -61,6 +64,51 @@ const defaultForm = {
   }
 };
 
+const transactionPresets = {
+  reliable: {
+    label: "Reliable",
+    detail: "Small daytime purchase with matched identity signals",
+    reasons: ["Low amount", "Matched email", "Normal velocity"],
+    form: defaultForm
+  },
+  suspicious: {
+    label: "Suspicious",
+    detail: "High-value late transaction with velocity and identity risk",
+    reasons: ["High value", "Email mismatch", "Prior fraud"],
+    form: {
+      amount: 9800,
+      currency: "EUR",
+      product: "C",
+      card_type: "credit",
+      card_brand: "mastercard",
+      email_domain_match: false,
+      payer_free_email: true,
+      receiver_free_email: true,
+      hour_of_day_local: 2,
+      day_of_week: 6,
+      use_live_fx: true,
+      advanced: {
+        tx_count_1h: 18,
+        tx_count_24h: 96,
+        geo_velocity_kmh: 1420,
+        distance_km: 7300,
+        days_since_last_tx: 0,
+        account_age_days: 3,
+        history_count: 1,
+        history_fraud_rate: 0.72,
+        prior_fraud_count: 3,
+        chargeback_count: 4,
+        merchant_frequency: 2,
+        identity_missing_rate: 0.9,
+        device_present: true,
+        mobile_device: true,
+        card_device_mismatch: true,
+        suspicious_identity_signal: 1
+      }
+    }
+  }
+};
+
 const products = [
   ["W", "Retail"],
   ["H", "Home"],
@@ -70,6 +118,25 @@ const products = [
 ];
 
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const numericRules = {
+  amount: { min: 0, max: 1_000_000_000, fallback: defaultForm.amount, integer: false },
+  hour_of_day_local: { min: 0, max: 23, fallback: defaultForm.hour_of_day_local, integer: true },
+  day_of_week: { min: 0, max: 6, fallback: defaultForm.day_of_week, integer: true },
+  tx_count_1h: { min: 0, max: 500, fallback: defaultForm.advanced.tx_count_1h, integer: false },
+  tx_count_24h: { min: 0, max: 5000, fallback: defaultForm.advanced.tx_count_24h, integer: false },
+  geo_velocity_kmh: { min: 0, max: 2000, fallback: defaultForm.advanced.geo_velocity_kmh, integer: false },
+  distance_km: { min: 0, max: 20000, fallback: defaultForm.advanced.distance_km, integer: false },
+  days_since_last_tx: { min: 0, max: 365, fallback: defaultForm.advanced.days_since_last_tx, integer: false },
+  account_age_days: { min: 0, max: 10000, fallback: defaultForm.advanced.account_age_days, integer: false },
+  history_count: { min: 0, max: 1_000_000, fallback: defaultForm.advanced.history_count, integer: false },
+  history_fraud_rate: { min: 0, max: 1, fallback: defaultForm.advanced.history_fraud_rate, integer: false },
+  prior_fraud_count: { min: 0, max: 10000, fallback: defaultForm.advanced.prior_fraud_count, integer: false },
+  chargeback_count: { min: 0, max: 100, fallback: defaultForm.advanced.chargeback_count, integer: false },
+  merchant_frequency: { min: 0, max: 10_000_000, fallback: defaultForm.advanced.merchant_frequency, integer: false },
+  identity_missing_rate: { min: 0, max: 1, fallback: defaultForm.advanced.identity_missing_rate, integer: false },
+  suspicious_identity_signal: { min: 0, max: 1, fallback: defaultForm.advanced.suspicious_identity_signal, integer: false }
+};
 
 function App() {
   const [models, setModels] = useState([]);
@@ -81,6 +148,7 @@ function App() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [loadingPrediction, setLoadingPrediction] = useState(false);
   const [message, setMessage] = useState(null);
+  const [apiState, setApiState] = useState("checking");
 
   const selectedModel = useMemo(
     () => models.find((model) => stripExt(model.checkpoint) === selected) || models.find((model) => model.selected),
@@ -93,15 +161,24 @@ function App() {
   }, []);
 
   async function api(path, options = {}) {
-    const response = await fetch(`${API_BASE}${path}`, {
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-      ...options
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.detail || `${response.status} ${response.statusText}`);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${API_BASE}${path}`, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        signal: controller.signal,
+        ...options
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || `${response.status} ${response.statusText}`);
+      }
+      return data;
+    } catch (error) {
+      throw new Error(apiErrorMessage(error));
+    } finally {
+      window.clearTimeout(timeout);
     }
-    return data;
   }
 
   async function refreshModels() {
@@ -115,7 +192,12 @@ function App() {
       setHealth(healthData);
       setModels(modelData.models || []);
       setSelected(modelData.selected || healthData.model_version || "not_loaded");
+      setApiState(healthData.model_version === "not_loaded" ? "no_model" : "online");
     } catch (error) {
+      setHealth(null);
+      setModels([]);
+      setSelected("not_loaded");
+      setApiState("offline");
       setMessage({ type: "error", text: error.message });
     } finally {
       setLoadingModels(false);
@@ -133,6 +215,7 @@ function App() {
       setSelected(data.model_version);
       await refreshModels();
       setMessage({ type: "ok", text: `${checkpoint} loaded` });
+      setApiState("online");
     } catch (error) {
       setMessage({ type: "error", text: error.message });
     } finally {
@@ -145,12 +228,18 @@ function App() {
     setLoadingPrediction(true);
     setMessage(null);
     try {
-      const payload = numericPayload(form);
+      const normalized = normalizeForm(form);
+      setForm(normalized.form);
+      const payload = numericPayload(normalized.form);
       const prediction = await api("/predict-demo", {
         method: "POST",
         body: JSON.stringify(payload)
       });
       setResult(prediction);
+      setApiState("online");
+      if (normalized.messages.length) {
+        setMessage({ type: "ok", text: `Adjusted ${normalized.messages.join(", ")}` });
+      }
     } catch (error) {
       setMessage({ type: "error", text: error.message });
     } finally {
@@ -162,6 +251,18 @@ function App() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function commitField(key) {
+    const rule = numericRules[key];
+    if (!rule) return;
+    setForm((current) => {
+      const sanitized = sanitizeNumber(current[key], rule);
+      if (sanitized.changed) {
+        setMessage({ type: "ok", text: `Adjusted ${humanLabel(key)}` });
+      }
+      return { ...current, [key]: sanitized.value };
+    });
+  }
+
   function updateAdvanced(key, value) {
     setForm((current) => ({
       ...current,
@@ -169,8 +270,37 @@ function App() {
     }));
   }
 
+  function commitAdvanced(key) {
+    const rule = numericRules[key];
+    if (!rule) return;
+    setForm((current) => {
+      const sanitized = sanitizeNumber(current.advanced[key], rule);
+      if (sanitized.changed) {
+        setMessage({ type: "ok", text: `Adjusted ${humanLabel(key)}` });
+      }
+      return {
+        ...current,
+        advanced: {
+          ...current.advanced,
+          [key]: sanitized.value
+        }
+      };
+    });
+  }
+
+  function applyPreset(name) {
+    const preset = transactionPresets[name];
+    if (!preset) return;
+    setForm(cloneForm(preset.form));
+    setResult(null);
+    setMessage({ type: "ok", text: `${preset.label} transaction loaded` });
+    setAdvancedOpen(name === "suspicious");
+  }
+
   const metricBars = chartMetrics(selectedModel);
   const riskClass = result ? `risk-${result.risk_band}` : "risk-idle";
+  const canScore = apiState === "online" && health?.model_version !== "not_loaded";
+  const status = statusFor(apiState, loadingModels, health);
 
   return (
     <main className="shell">
@@ -186,9 +316,9 @@ function App() {
         </div>
         <div className="top-actions">
           <StatusPill
-            icon={health?.status === "ok" ? CheckCircle2 : AlertTriangle}
-            tone={health?.status === "ok" ? "good" : "warn"}
-            label={health?.status === "ok" ? "API online" : "API offline"}
+            icon={status.icon}
+            tone={status.tone}
+            label={status.label}
           />
           <IconButton
             label="Refresh models"
@@ -238,11 +368,19 @@ function App() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="empty-state">No metrics loaded</div>
+              <EmptyState
+                title={apiState === "offline" ? "API unavailable" : "No metrics loaded"}
+                detail={apiState === "offline" ? "Start the backend, then refresh." : "A compatible checkpoint has not been loaded."}
+              />
             )}
           </div>
 
           <div className="model-list">
+            {models.length === 0 && (
+              <div className="model-list-empty">
+                {apiState === "offline" ? "No registry connection." : "No compatible checkpoints found."}
+              </div>
+            )}
             {models.slice(0, 10).map((model) => (
               <button
                 key={model.checkpoint}
@@ -268,12 +406,30 @@ function App() {
             icon={CreditCard}
             title="Transaction"
             action={
-              <button type="submit" className="primary-command" disabled={loadingPrediction}>
+              <button type="submit" className="primary-command" disabled={loadingPrediction || !canScore}>
                 {loadingPrediction ? <Loader2 size={17} className="spin" /> : <Play size={17} />}
                 Score
               </button>
             }
           />
+
+          <div className="preset-strip" aria-label="Transaction presets">
+            {Object.entries(transactionPresets).map(([name, preset]) => (
+              <button
+                type="button"
+                key={name}
+                className={`preset-card ${name}`}
+                onClick={() => applyPreset(name)}
+              >
+                <span>
+                  {name === "reliable" ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+                  <strong>{preset.label}</strong>
+                </span>
+                <small>{preset.detail}</small>
+                <em>{preset.reasons.join(" | ")}</em>
+              </button>
+            ))}
+          </div>
 
           <div className="form-grid">
             <Field label="Amount">
@@ -283,6 +439,7 @@ function App() {
                 step="0.01"
                 value={form.amount}
                 onChange={(event) => updateField("amount", event.target.value)}
+                onBlur={() => commitField("amount")}
               />
             </Field>
             <Field label="Currency" icon={Globe2}>
@@ -299,6 +456,7 @@ function App() {
                 max="23"
                 value={form.hour_of_day_local}
                 onChange={(event) => updateField("hour_of_day_local", event.target.value)}
+                onBlur={() => commitField("hour_of_day_local")}
               />
             </Field>
             <Field label="Day">
@@ -350,19 +508,19 @@ function App() {
 
           <div className={`advanced-region ${advancedOpen ? "open" : ""}`}>
             <div className="advanced-grid">
-              <NumberField label="Tx count 1h" value={form.advanced.tx_count_1h} min="0" max="500" onChange={(value) => updateAdvanced("tx_count_1h", value)} />
-              <NumberField label="Tx count 24h" value={form.advanced.tx_count_24h} min="0" max="5000" onChange={(value) => updateAdvanced("tx_count_24h", value)} />
-              <NumberField label="Geo velocity" value={form.advanced.geo_velocity_kmh} min="0" max="2000" onChange={(value) => updateAdvanced("geo_velocity_kmh", value)} />
-              <NumberField label="Distance km" value={form.advanced.distance_km} min="0" max="20000" onChange={(value) => updateAdvanced("distance_km", value)} />
-              <NumberField label="Days since tx" value={form.advanced.days_since_last_tx} min="0" max="365" onChange={(value) => updateAdvanced("days_since_last_tx", value)} />
-              <NumberField label="Account age" value={form.advanced.account_age_days} min="0" max="10000" onChange={(value) => updateAdvanced("account_age_days", value)} />
-              <NumberField label="History count" value={form.advanced.history_count} min="0" max="1000000" onChange={(value) => updateAdvanced("history_count", value)} />
-              <NumberField label="History fraud rate" value={form.advanced.history_fraud_rate} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("history_fraud_rate", value)} />
-              <NumberField label="Prior fraud count" value={form.advanced.prior_fraud_count} min="0" max="10000" onChange={(value) => updateAdvanced("prior_fraud_count", value)} />
-              <NumberField label="Chargebacks" value={form.advanced.chargeback_count} min="0" max="100" onChange={(value) => updateAdvanced("chargeback_count", value)} />
-              <NumberField label="Merchant frequency" value={form.advanced.merchant_frequency} min="0" max="10000000" onChange={(value) => updateAdvanced("merchant_frequency", value)} />
-              <NumberField label="Identity missing" value={form.advanced.identity_missing_rate} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("identity_missing_rate", value)} />
-              <NumberField label="Identity signal" value={form.advanced.suspicious_identity_signal} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("suspicious_identity_signal", value)} />
+              <NumberField label="Tx count 1h" value={form.advanced.tx_count_1h} min="0" max="500" onChange={(value) => updateAdvanced("tx_count_1h", value)} onBlur={() => commitAdvanced("tx_count_1h")} />
+              <NumberField label="Tx count 24h" value={form.advanced.tx_count_24h} min="0" max="5000" onChange={(value) => updateAdvanced("tx_count_24h", value)} onBlur={() => commitAdvanced("tx_count_24h")} />
+              <NumberField label="Geo velocity" value={form.advanced.geo_velocity_kmh} min="0" max="2000" onChange={(value) => updateAdvanced("geo_velocity_kmh", value)} onBlur={() => commitAdvanced("geo_velocity_kmh")} />
+              <NumberField label="Distance km" value={form.advanced.distance_km} min="0" max="20000" onChange={(value) => updateAdvanced("distance_km", value)} onBlur={() => commitAdvanced("distance_km")} />
+              <NumberField label="Days since tx" value={form.advanced.days_since_last_tx} min="0" max="365" onChange={(value) => updateAdvanced("days_since_last_tx", value)} onBlur={() => commitAdvanced("days_since_last_tx")} />
+              <NumberField label="Account age" value={form.advanced.account_age_days} min="0" max="10000" onChange={(value) => updateAdvanced("account_age_days", value)} onBlur={() => commitAdvanced("account_age_days")} />
+              <NumberField label="History count" value={form.advanced.history_count} min="0" max="1000000" onChange={(value) => updateAdvanced("history_count", value)} onBlur={() => commitAdvanced("history_count")} />
+              <NumberField label="History fraud rate" value={form.advanced.history_fraud_rate} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("history_fraud_rate", value)} onBlur={() => commitAdvanced("history_fraud_rate")} />
+              <NumberField label="Prior fraud count" value={form.advanced.prior_fraud_count} min="0" max="10000" onChange={(value) => updateAdvanced("prior_fraud_count", value)} onBlur={() => commitAdvanced("prior_fraud_count")} />
+              <NumberField label="Chargebacks" value={form.advanced.chargeback_count} min="0" max="100" onChange={(value) => updateAdvanced("chargeback_count", value)} onBlur={() => commitAdvanced("chargeback_count")} />
+              <NumberField label="Merchant frequency" value={form.advanced.merchant_frequency} min="0" max="10000000" onChange={(value) => updateAdvanced("merchant_frequency", value)} onBlur={() => commitAdvanced("merchant_frequency")} />
+              <NumberField label="Identity missing" value={form.advanced.identity_missing_rate} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("identity_missing_rate", value)} onBlur={() => commitAdvanced("identity_missing_rate")} />
+              <NumberField label="Identity signal" value={form.advanced.suspicious_identity_signal} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("suspicious_identity_signal", value)} onBlur={() => commitAdvanced("suspicious_identity_signal")} />
             </div>
             <div className="toggle-grid compact">
               <Toggle label="Device present" checked={form.advanced.device_present} onChange={(value) => updateAdvanced("device_present", value)} />
@@ -393,8 +551,9 @@ function App() {
             </div>
           ) : (
             <div className="result-placeholder">
-              <Lock size={30} />
-              <span>No transaction scored</span>
+              {apiState === "offline" ? <AlertTriangle size={30} /> : <Lock size={30} />}
+              <span>{apiState === "offline" ? "API unavailable" : "No transaction scored"}</span>
+              <small>{canScore ? "Ready for scoring" : status.detail}</small>
             </div>
           )}
         </section>
@@ -424,7 +583,7 @@ function Field({ label, icon: Icon, children }) {
   );
 }
 
-function NumberField({ label, value, onChange, min, max, step = "1" }) {
+function NumberField({ label, value, onChange, onBlur, min, max, step = "1" }) {
   return (
     <Field label={label}>
       <input
@@ -434,6 +593,7 @@ function NumberField({ label, value, onChange, min, max, step = "1" }) {
         step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
       />
     </Field>
   );
@@ -466,6 +626,15 @@ function Toggle({ label, checked, onChange }) {
       <span className="switch" />
       <span>{label}</span>
     </label>
+  );
+}
+
+function EmptyState({ title, detail }) {
+  return (
+    <div className="empty-state">
+      <strong>{title}</strong>
+      <span>{detail}</span>
+    </div>
   );
 }
 
@@ -529,6 +698,101 @@ function numericPayload(value) {
     advanced,
     feature_overrides: {}
   };
+}
+
+function normalizeForm(value) {
+  const messages = [];
+  const form = cloneForm(value);
+  for (const key of ["amount", "hour_of_day_local", "day_of_week"]) {
+    const sanitized = sanitizeNumber(form[key], numericRules[key]);
+    form[key] = sanitized.value;
+    if (sanitized.changed) messages.push(humanLabel(key));
+  }
+  for (const key of Object.keys(form.advanced)) {
+    const rule = numericRules[key];
+    if (!rule) continue;
+    const sanitized = sanitizeNumber(form.advanced[key], rule);
+    form.advanced[key] = sanitized.value;
+    if (sanitized.changed) messages.push(humanLabel(key));
+  }
+  if (Number(form.advanced.tx_count_24h) < Number(form.advanced.tx_count_1h)) {
+    form.advanced.tx_count_24h = form.advanced.tx_count_1h;
+    messages.push("24h transaction count");
+  }
+  return { form, messages: [...new Set(messages)].slice(0, 5) };
+}
+
+function sanitizeNumber(value, rule) {
+  const raw = typeof value === "string" ? value.trim() : value;
+  let numeric = Number(raw);
+  if (!Number.isFinite(numeric)) {
+    numeric = rule.fallback;
+  }
+  numeric = Math.max(rule.min, Math.min(rule.max, numeric));
+  if (rule.integer) {
+    numeric = Math.round(numeric);
+  }
+  const changed = Number(value) !== numeric || raw === "";
+  return { value: numeric, changed };
+}
+
+function humanLabel(key) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\btx\b/g, "transaction")
+    .replace(/\b1h\b/g, "1h")
+    .replace(/\b24h\b/g, "24h");
+}
+
+function cloneForm(value) {
+  return {
+    ...value,
+    advanced: { ...value.advanced }
+  };
+}
+
+function statusFor(apiState, loading, health) {
+  if (loading && apiState === "checking") {
+    return {
+      icon: Loader2,
+      tone: "neutral",
+      label: "Checking API",
+      detail: "Connecting to model server"
+    };
+  }
+  if (apiState === "online" && health?.status === "ok") {
+    return {
+      icon: CheckCircle2,
+      tone: "good",
+      label: "API online",
+      detail: "Model loaded"
+    };
+  }
+  if (apiState === "no_model") {
+    return {
+      icon: AlertTriangle,
+      tone: "warn",
+      label: "No model",
+      detail: "Load a checkpoint before scoring"
+    };
+  }
+  return {
+    icon: AlertTriangle,
+    tone: "warn",
+    label: "API offline",
+    detail: "Start backend on port 8000"
+  };
+}
+
+function apiErrorMessage(error) {
+  if (error?.name === "AbortError") {
+    return "API timeout";
+  }
+  const text = String(error?.message || error || "");
+  if (text === "Failed to fetch" || text.includes("NetworkError")) {
+    return "API unreachable";
+  }
+  return text || "API request failed";
 }
 
 function chartMetrics(model) {

@@ -205,21 +205,60 @@ Open:
 http://127.0.0.1:5173
 ```
 
-Demo steps:
+Demo navigation:
 
 ```text
-1. Point to API online.
-2. Point to selected model and recommended checkpoint.
-3. Explain that the model registry ranks checkpoints by AUPRC/AUROC/F1, loss,
-   target status, and worst-client metrics.
-4. Show AUPRC/AUROC/F1 chart.
-5. Enter amount and currency.
-6. Explain currency conversion happens in backend and falls back to static rates.
-7. Click Score.
-8. Explain probability, threshold, risk band, model version, and FX source.
-9. Open advanced signals.
-10. Change a riskier setting, for example high amount, email mismatch,
-    high velocity, or prior fraud rate, then score again.
+1. Start at the top bar.
+   Point to API online. Say this proves the React GUI is connected to the
+   FastAPI inference gateway, not a static mockup.
+
+2. Point to Selected, Threshold, and Recommended.
+   Explain that the loaded checkpoint is target_met_round_024, and the threshold
+   is checkpoint-specific. The GUI does not blindly use 0.5.
+
+3. Point to Model selection.
+   Explain that the registry ranks checkpoints by AUPRC, AUROC, F1, validation
+   loss, target status, high-band score, and worst-client stability. Then point
+   to the AUPRC/AUROC/F1 chart.
+
+4. In the Transaction panel, click Reliable.
+   Say this fills a normal transaction: low amount, daytime hour, matched email
+   domain, established account, normal velocity, low fraud history.
+   Short explanation: "This looks reliable because the behavior is consistent:
+   normal purchase size, normal timing, matching identity signals, and no strong
+   history of fraud."
+
+5. Click Score.
+   Point to the Decision panel. Explain fraud probability, decision label, risk
+   band, selected model version, USD amount, FX rate/source, and stale-FX flag.
+   Short bridge: "The model should keep this below the threshold, so the
+   decision should stay in approve or low-risk territory."
+
+6. Click Suspicious.
+   Say this fills a deliberately risky transaction: high value, late-night
+   checkout, cross-currency amount, mismatched email domain, new account, high
+   transaction velocity, card-device mismatch, chargebacks, and prior fraud.
+   The app opens Advanced signals automatically so the audience can see the
+   stronger risk inputs.
+   Short explanation: "This looks suspicious because several weak signals happen
+   together: high amount, unusual timing, identity mismatch, new account, high
+   velocity, and prior fraud indicators. One signal alone may not prove fraud,
+   but the combination raises risk."
+
+7. Click Score again.
+   Compare the decision panel with the reliable case. Explain that the same API
+   endpoint and same selected model are used; only the transaction features
+   changed.
+   Short bridge: "The point is not that the button is hardcoded. The same model
+   and threshold are used; the score changes because the feature vector changed."
+
+8. Toggle Live FX off and change Currency if needed.
+   Explain that currency conversion happens in the backend. Live FX is attempted
+   first; static fallback keeps the demo stable if the currency API is down.
+
+9. Click refresh in the top-right if the backend is restarted.
+   Explain resilience: the GUI has explicit online/offline/no-model states and
+   disables scoring when inference is not safe.
 ```
 
 What to say during demo:
@@ -227,6 +266,28 @@ What to say during demo:
 ```text
 The GUI is not a separate toy model. It calls the FastAPI backend, which loads
 the selected PyTorch checkpoint and reconstructs the same 316-feature schema.
+```
+
+Short speaker script:
+
+```text
+This screen has three jobs. First, it proves the server is online and shows the
+actual model checkpoint. Second, it exposes why this checkpoint was chosen:
+AUPRC, AUROC, F1, loss, and client stability. Third, it lets us score a
+transaction in business terms, while the backend converts it into the complete
+feature vector expected by the model.
+
+I will score two controlled cases. Reliable is a normal transaction, so we
+expect a low-risk result. Suspicious has stronger fraud signals, so we expect
+the probability and risk band to move upward. This is the easiest way to show
+that the demo is not a hardcoded answer; it responds to feature changes through
+the trained checkpoint.
+
+When explaining the presets, keep it simple. Reliable means the transaction
+matches expected banking behavior: small amount, normal hour, matched email
+identity, stable account history, and normal velocity. Suspicious means multiple
+risk indicators stack together: high amount, unusual hour, email mismatch, new
+account, fast repeated activity, device mismatch, and previous fraud signals.
 ```
 
 ## 9. Results Slide

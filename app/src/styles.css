@@ -146,6 +146,11 @@ h2 {
   background: #fff3d4;
 }
 
+.status-pill.neutral {
+  color: #334155;
+  background: #eef2f7;
+}
+
 .icon-button {
   justify-content: center;
   width: 38px;
@@ -269,6 +274,77 @@ h2 {
   color: #ffffff;
 }
 
+.preset-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+.preset-card {
+  min-height: 76px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfb;
+  color: var(--ink);
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.preset-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 10px 22px -20px rgba(22, 33, 27, 0.5);
+}
+
+.preset-card span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preset-card strong {
+  font-size: 0.95rem;
+}
+
+.preset-card small {
+  color: var(--ink-muted);
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.preset-card em {
+  color: var(--brand-strong);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.preset-card.suspicious em {
+  color: #8f1d15;
+}
+
+.preset-card.reliable span svg {
+  color: var(--good);
+}
+
+.preset-card.suspicious span svg {
+  color: var(--danger);
+}
+
+.preset-card.reliable:hover {
+  background: #effaf4;
+}
+
+.preset-card.suspicious:hover {
+  background: #fff5f3;
+}
+
 .metric-chart {
   height: 190px;
   padding: 10px 8px 4px;
@@ -283,10 +359,39 @@ h2 {
   font-weight: 800;
 }
 
+.empty-state {
+  align-content: center;
+  gap: 6px;
+  padding: 18px;
+  text-align: center;
+}
+
+.empty-state strong {
+  color: var(--ink);
+}
+
+.empty-state span,
+.result-placeholder small {
+  max-width: 280px;
+  color: var(--ink-muted);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
 .model-list {
   max-height: 520px;
   overflow: auto;
   border-top: 1px solid var(--line);
+}
+
+.model-list-empty {
+  min-height: 74px;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  color: var(--ink-muted);
+  font-weight: 800;
+  text-align: center;
 }
 
 .model-row {
@@ -618,6 +723,12 @@ select:focus {
 .result-placeholder {
   min-height: 330px;
   gap: 10px;
+  text-align: center;
+  padding: 20px;
+}
+
+.result-placeholder svg {
+  color: var(--ink-muted);
 }
 
 .spin {
@@ -660,7 +771,8 @@ select:focus {
   .workspace,
   .form-grid,
   .advanced-grid,
-  .toggle-grid {
+  .toggle-grid,
+  .preset-strip {
     grid-template-columns: 1fr;
   }
 
