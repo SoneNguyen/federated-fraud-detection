@@ -1,19 +1,18 @@
-"""Tests for model/architecture.py re-exports."""
+"""Tests for the active FraudMLP architecture."""
 import unittest
 
 from src.model.fraud_mlp import FraudMLP, INPUT_DIM
+from src.data.dataset import FEATURE_ORDER
 
 
 class TestArchitecture(unittest.TestCase):
 
     def test_fraudmlp_imported(self):
-        """FraudMLP should be available from model.architecture."""
         model = FraudMLP()
         assert model is not None
 
-    def test_input_dim_imported(self):
-        """INPUT_DIM should be available from model.architecture."""
-        assert INPUT_DIM == 34
+    def test_input_dim_matches_schema(self):
+        assert INPUT_DIM == len(FEATURE_ORDER)
 
 
 if __name__ == "__main__":

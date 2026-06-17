@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import datetime, UTC
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import torch
 
@@ -33,6 +34,34 @@ class CheckpointManager:
     def latest(self) -> Optional[Path]:
         return self._latest_checkpoint()
 
+    def prune_round_checkpoints(
+        self,
+        keep_last: int,
+        protected_stems: Iterable[str] = (),
+    ) -> int:
+        """Remove old round checkpoints while keeping recent and tagged models."""
+        if keep_last <= 0:
+            return 0
+
+        protected = set(protected_stems)
+        numbered_rounds: list[tuple[int, Path]] = []
+        for path in self.checkpoint_dir.glob("round_*.pt"):
+            match = re.fullmatch(r"round_(\d+)", path.stem)
+            if match:
+                numbered_rounds.append((int(match.group(1)), path))
+
+        numbered_rounds.sort(key=lambda item: item[0])
+        stale = numbered_rounds[:-keep_last]
+        removed = 0
+        for _, path in stale:
+            if path.stem in protected:
+                continue
+            for target in (path, path.with_suffix(".json")):
+                if target.exists():
+                    target.unlink()
+                    removed += 1
+        return removed
+
     def rollback(self) -> Path:
         """Copy and return the latest checkpoint path for rollback."""
         checkpoint = self._latest_checkpoint()
@@ -56,7 +85,16 @@ class CheckpointManager:
             path
             for path in self.checkpoint_dir.iterdir()
             if path.is_file() and path.suffix in checkpoint_extensions
+            and not path.stem.startswith("client_")
         ]
         if not checkpoints:
             return None
+        round_checkpoints = [
+            path for path in checkpoints if re.fullmatch(r"round_\d+", path.stem)
+        ]
+        if round_checkpoints:
+            return max(
+                round_checkpoints,
+                key=lambda path: int(path.stem.split("_")[1]),
+            )
         return max(checkpoints, key=lambda path: path.stat().st_mtime)

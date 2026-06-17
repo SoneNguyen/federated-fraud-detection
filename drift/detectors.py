@@ -1,16 +1,13 @@
 import numpy as np
 import pandas as pd
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from datetime import datetime, UTC
 from scipy import stats
 from pathlib import Path
+from src.data.feature_registry import FEATURE_ORDER
 
-with open("config/schema.json") as f:
-    _s = json.load(f)
-NUMERIC = [f["name"] for f in _s["feature_schema"]["numeric_features"]]
-# 9 features: tx_amount_usd, tx_count_1h, ... account_age_days
+NUMERIC = FEATURE_ORDER
 
 @dataclass
 class DriftReport:

@@ -22,7 +22,7 @@ class DummyFitRes:
 
 class TestWeightedFedAvg(unittest.TestCase):
 
-    @patch("server.strategy.mlflow.log_metric")
+    @patch("src.server.strategy.mlflow.log_metric")
     def test_aggregate_fit_returns_parameter_object(self, mock_log_metric):
         params = ndarrays_to_parameters([np.array([1.0, 2.0], dtype=np.float32)])
 
