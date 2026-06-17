@@ -290,6 +290,79 @@ risk indicators stack together: high amount, unusual hour, email mismatch, new
 account, fast repeated activity, device mismatch, and previous fraud signals.
 ```
 
+How to explain low-risk vs high-risk transaction signals:
+
+```text
+The model is not looking at one field alone. Fraud detection is about patterns.
+A single high amount is not automatically fraud, and a free email address is not
+automatically fraud. The risk increases when multiple unusual signals appear in
+the same transaction.
+```
+
+Low-risk signals to mention:
+
+```text
+1. Amount is normal.
+   A small or typical purchase is closer to normal customer behavior.
+
+2. Time is normal.
+   A daytime transaction is less unusual than a very late-night transaction.
+
+3. Identity is consistent.
+   Email/domain information matches, and the account/device information is
+   present rather than missing.
+
+4. Behavior is stable.
+   Low transaction velocity, low distance/geo velocity, and no sudden repeated
+   activity make the transaction look ordinary.
+
+5. History is clean.
+   Low historical fraud rate, no prior fraud count, and no chargebacks reduce
+   the model's risk score.
+```
+
+High-risk signals to mention:
+
+```text
+1. High amount.
+   Fraud attacks often try to extract more value, so unusually high amount is a
+   risk signal, especially with other abnormal behavior.
+
+2. Unusual time.
+   Late-night or early-morning activity can be suspicious because it may be
+   outside the user's normal transaction pattern.
+
+3. Identity mismatch.
+   Email mismatch, missing identity fields, or suspicious identity indicators
+   suggest the transaction may not belong to the legitimate customer.
+
+4. New or weak account history.
+   A very new account has less trusted history, so the model has less evidence
+   that the behavior is normal.
+
+5. High velocity or distance.
+   Many transactions in a short time, large distance, or high geo velocity can
+   indicate automated abuse or account takeover.
+
+6. Device/card inconsistency.
+   A card-device mismatch or unusual device signal adds risk because the payment
+   instrument and device behavior do not line up.
+
+7. Prior fraud or chargebacks.
+   Previous fraud count, high historical fraud rate, and chargebacks are direct
+   history-based signals that the same identity/card/email pattern has been
+   risky before.
+```
+
+Short line to say when comparing the two scores:
+
+```text
+The reliable case has mostly normal signals, so the model score stays below the
+decision threshold. The suspicious case stacks several abnormal signals at once,
+so the model pushes the fraud probability above the threshold and changes the
+decision.
+```
+
 ## 9. Results Slide
 
 Use current stable result:
