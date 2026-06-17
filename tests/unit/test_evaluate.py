@@ -1,5 +1,4 @@
 """Tests for model/evaluate.py."""
-import json
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +7,7 @@ import pytest
 import torch
 
 from src.data.dataset import FEATURE_ORDER, LABEL
+from src.data.feature_registry import SCHEMA_VERSION
 from src.model.fraud_mlp import FraudMLP
 from model.evaluate import eval_model, load_test
 
@@ -62,9 +62,7 @@ def test_eval_model_schema_version(tmp_path):
     X = torch.randn(100, len(FEATURE_ORDER))
     y = np.array([1] * 5 + [0] * 95)
     result = eval_model(model, X, y)
-    with open("config/schema.json") as f:
-        schema = json.load(f)
-    assert result["schema_version"] == schema["feature_schema"]["version"]
+    assert result["schema_version"] == SCHEMA_VERSION
 
 
 def test_load_test_split_fraction(tmp_path):

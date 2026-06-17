@@ -8,6 +8,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Data & Checkpoints
 data/ieee_cis/
@@ -22,11 +27,15 @@ checkpoints/
 *.pt
 *.pth
 *.model
+*.onnx
+*.pkl
+*.joblib
 
 # Local python environment files
 .python-version
 *.egg-info/
 status-cleanup.txt
+.uv-cache/
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
@@ -34,18 +43,34 @@ status-cleanup.txt
 # IDEs
 .vscode/
 .idea/
+*.code-workspace
 
 # Build & Distribution
 dist/
 build/
 *.egg-info/
 
+# Frontend local/generated files
+app/node_modules/
+app/dist/
+app/.vite/
+app/.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # Output & Results
 results/
+outputs/archive/
+outputs/checkpoints/
+outputs/gui_logs/
+outputs/runtime/
 *.log
 
 # MLflow tracking database
 mlflow.db
+mlruns/
 
 # Environment & Secrets
 .env

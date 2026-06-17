@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.client.client import FraudClient
+from src.client.client import FocalLoss, FraudClient
 from src.model.fraud_mlp import FraudMLP
 
 
@@ -47,12 +47,33 @@ class TestFraudClient(unittest.TestCase):
         assert isinstance(dataset, TensorDataset)          # ← narrows to Sized subtype
         n = len(dataset)
 
-        updated_params, num_examples, _ = self.client.fit(params, {"lr": 0.01})
+        updated_params, num_examples, fit_metrics = self.client.fit(
+            params, {"lr": 0.01, "focal_alpha": 0.8}
+        )
         self.assertEqual(num_examples, n)
+        self.assertEqual(self.client.focal_loss.alpha, 0.8)
+        self.assertIn("client_id", fit_metrics)
 
         loss, eval_examples, _ = self.client.evaluate(updated_params, {})
         self.assertEqual(eval_examples, n)
         self.assertIsInstance(loss, float)
+
+    def test_focal_loss_alpha_weights_positive_and_negative_classes(self):
+        logits = torch.tensor([0.0, 0.0])
+        labels = torch.tensor([1.0, 0.0])
+
+        high_positive_alpha = FocalLoss(alpha=0.8, gamma=0.0)(logits, labels)
+        low_positive_alpha = FocalLoss(alpha=0.2, gamma=0.0)(logits, labels)
+
+        self.assertTrue(torch.allclose(high_positive_alpha, low_positive_alpha))
+
+        positive_only_high = FocalLoss(alpha=0.8, gamma=0.0)(
+            logits[:1], labels[:1]
+        )
+        positive_only_low = FocalLoss(alpha=0.2, gamma=0.0)(
+            logits[:1], labels[:1]
+        )
+        self.assertGreater(positive_only_high.item(), positive_only_low.item())
 
 
 if __name__ == "__main__":

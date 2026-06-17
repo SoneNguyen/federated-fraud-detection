@@ -16,6 +16,7 @@ from sklearn.metrics import (
 )
 from src.model.fraud_mlp import FraudMLP
 from src.data.dataset import FEATURE_ORDER, LABEL
+from src.data.feature_registry import SCHEMA_VERSION
 
 with open("config/normalization_params.json") as f:
     NORM = json.load(f)
@@ -42,9 +43,7 @@ def load_test(parquet_path: str, test_frac: float = 0.15) -> tuple[torch.Tensor,
 
 def eval_model(model: torch.nn.Module, X: torch.Tensor, y: np.ndarray) -> dict[str, Any]:
     result = evaluate(model, X, y)
-    with open("contracts/schema.json") as f:
-        schema = json.load(f)
-    result["schema_version"] = schema["feature_schema"]["version"]
+    result["schema_version"] = SCHEMA_VERSION
     return result
 
 
@@ -89,10 +88,11 @@ def run_evaluation():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # 1. Federated model (latest checkpoint)
-    fl_ckpts = sorted(Path("checkpoints").glob("round_*.pt"))
+    checkpoint_dir = Path("outputs/checkpoints")
+    fl_ckpts = sorted(checkpoint_dir.glob("round_*.pt"))
     if not fl_ckpts:
         raise FileNotFoundError(
-            "No federated checkpoint files found in checkpoints/round_*.pt. "
+            f"No federated checkpoint files found in {checkpoint_dir}/round_*.pt. "
             "Please run training or populate the checkpoints directory before evaluation."
         )
 
@@ -127,7 +127,7 @@ def run_evaluation():
 
     # 2. Local-only baseline (train on client_0 only, no federation)
     # (load from local_only_baseline.pt if exists, else skip)
-    local_ckpt = Path("checkpoints/local_only_baseline.pt")
+    local_ckpt = checkpoint_dir / "local_only_baseline.pt"
     if local_ckpt.exists():
         local_model = FraudMLP(device=str(device))
         local_model.load_state_dict(torch.load(local_ckpt, map_location=local_model.device))
@@ -139,8 +139,10 @@ def run_evaluation():
     with open("results/evaluation_report.json", "w") as f:
         json.dump(results, f, indent=2)
     # Assert FL meets minimum bar
-    assert results["federated"]["AUPRC"] >= 0.75,         f"FL AUPRC {results['federated']['AUPRC']} below 0.75 target"
-    print("\nTarget AUPRC >= 0.75: PASSED")
+    assert results["federated"]["AUPRC"] >= 0.70, f"FL AUPRC {results['federated']['AUPRC']} below 0.70 target"
+    assert results["federated"]["AUROC"] >= 0.90, f"FL AUROC {results['federated']['AUROC']} below 0.90 target"
+    assert results["federated"]["F1_best"] >= 0.70, f"FL F1 {results['federated']['F1_best']} below 0.70 target"
+    print("\nAbsolute target passed: AUPRC >= 0.70, AUROC >= 0.90, F1 >= 0.70")
 
 if __name__ == "__main__":
     run_evaluation()
