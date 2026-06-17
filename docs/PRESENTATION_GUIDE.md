@@ -60,8 +60,10 @@ trains locally, and sends model updates to the server. The server aggregates
 updates into one global fraud model.
 
 The dataset is IEEE-CIS Fraud Detection. It is highly imbalanced, with about
-3.5% fraud rows, so normal accuracy is not enough. We use AUPRC (explain what this is), AUROC (explain what this is), and F1 (and this too)
-as targets.
+3.5% fraud rows, so normal accuracy is not enough. A model could predict
+"not fraud" for almost every transaction and still look accurate. We use AUPRC,
+AUROC, and F1 because they measure ranking quality, fraud detection quality,
+and the precision/recall tradeoff more directly.
 ```
 
 ## 4. Dataset Talking Points
@@ -94,6 +96,24 @@ Fraud is rare. Accuracy can be high even when fraud detection is bad. AUPRC
 measures how well the model ranks rare positive fraud cases.
 ```
 
+Why AUROC:
+
+```text
+AUROC measures whether fraud transactions generally receive higher scores than
+normal transactions across many possible thresholds. A simple way to explain it:
+if we randomly choose one fraud transaction and one normal transaction, AUROC
+measures how often the model ranks the fraud transaction as riskier.
+```
+
+Why F1:
+
+```text
+F1 combines precision and recall at the chosen operating threshold. Precision
+means: when the system says fraud, how often is it correct? Recall means: of all
+real fraud, how much did we catch? F1 matters because a fraud system must catch
+fraud without creating too many false alarms.
+```
+
 ## 5. Feature Engineering Talking Points
 
 Keep this part concrete. Mention only the most important groups:
@@ -110,7 +130,7 @@ Key formula:
 
 ```text
 hist_fraud_rate =
-  (previous_fraud_count + 32 * global_prior) / (previous_count + 32) [clarify on this formula]
+  (previous_fraud_count + 32 * global_prior) / (previous_count + 32)
 ```
 
 Say:
@@ -118,6 +138,10 @@ Say:
 ```text
 The history features are strictly backward-looking. We only use events before
 the current transaction, so the feature engineering avoids future leakage.
+The formula is smoothed. If an email or card has only one previous transaction,
+we do not trust that tiny history completely. The 32 * global_prior term pulls
+small histories toward the global fraud rate. As previous_count grows, the
+entity's own history becomes more important.
 ```
 
 ## 6. Model and Metrics Talking Points
@@ -146,6 +170,33 @@ Metrics:
 precision = TP / (TP + FP)
 recall    = TP / (TP + FN)
 F1        = 2 * precision * recall / (precision + recall)
+```
+
+Metric explanation:
+
+```text
+TP is a fraud transaction correctly flagged as fraud.
+FP is a normal transaction incorrectly flagged as fraud.
+FN is a fraud transaction missed by the model.
+
+Precision is about false alarms. Higher precision means fewer legitimate
+customers are incorrectly blocked or reviewed.
+
+Recall is about missed fraud. Higher recall means the system catches more real
+fraud.
+
+F1 balances precision and recall. It is useful for the demo because the final
+decision is made at one threshold, so we need a threshold that catches fraud
+without flooding the system with false positives.
+```
+
+AUPRC vs AUROC:
+
+```text
+AUROC is useful for overall ranking, but because fraud is rare, AUROC can look
+strong even when the model is not great at finding the rare fraud class. AUPRC
+focuses on precision and recall for the fraud class, so it is stricter for this
+problem. That is why AUPRC is usually the hardest target here.
 ```
 
 Say:
@@ -361,6 +412,91 @@ The reliable case has mostly normal signals, so the model score stays below the
 decision threshold. The suspicious case stacks several abnormal signals at once,
 so the model pushes the fraud probability above the threshold and changes the
 decision.
+```
+
+Metric-level explanation of why the two results differ:
+
+```text
+The GUI output is a fraud probability p. Internally, the neural network creates
+a logit z from the 316 features, then converts it with sigmoid:
+
+p = 1 / (1 + exp(-z))
+
+Low-risk signals push z downward, so p becomes small. High-risk signals push z
+upward, so p becomes large. The final label is not based on p > 0.5. It is based
+on the selected checkpoint's F1-optimized threshold, around 0.96 to 0.98.
+```
+
+How reliable signals affect the metrics:
+
+```text
+For a reliable transaction, the model should score it below threshold.
+If the transaction is truly normal, this is a true negative. True negatives are
+not directly in precision, recall, or F1, but they matter operationally because
+they avoid false positives. Avoiding false positives improves precision:
+
+precision = TP / (TP + FP)
+
+So when reliable transactions are not incorrectly flagged, FP stays lower and
+precision stays healthier.
+```
+
+How suspicious signals affect the metrics:
+
+```text
+For a suspicious transaction, the model should score it above threshold if the
+pattern resembles fraud. If the transaction is truly fraud, this is a true
+positive. True positives improve both precision and recall:
+
+precision = TP / (TP + FP)
+recall    = TP / (TP + FN)
+
+Catching suspicious fraud reduces FN and increases TP, so recall improves and
+F1 improves. But if the model flags too many normal transactions, FP increases
+and precision drops. This is why the threshold is chosen carefully.
+```
+
+How to connect this to AUPRC/AUROC during the demo:
+
+```text
+AUPRC and AUROC are ranking metrics before we commit to one threshold. If the
+model gives the suspicious case a much higher probability than the reliable
+case, that is the same behavior those metrics reward: fraud-like transactions
+should rank above normal-looking transactions.
+
+AUROC rewards broad separation between fraud and normal transactions. AUPRC is
+stricter for this imbalanced dataset because it focuses on whether high-scored
+transactions are actually fraud and whether real fraud appears near the top of
+the ranking.
+```
+
+Feature-level explanation for the score change:
+
+```text
+Reliable preset:
+- low amount -> normal spending magnitude
+- daytime hour -> ordinary timing
+- matched email/domain -> consistent identity
+- established account age -> enough normal history
+- low tx_count and low geo_velocity -> no rapid attack pattern
+- low history_fraud_rate and prior_fraud_count -> clean backward-looking history
+
+Suspicious preset:
+- high amount -> more financial impact
+- late hour -> less typical behavior
+- email mismatch and identity_missing_rate -> identity uncertainty
+- new account age -> weak trusted history
+- high tx_count, distance, and geo_velocity -> possible automated abuse or account takeover
+- chargeback/prior fraud/history fraud rate -> past risky behavior in related identifiers
+- card-device mismatch -> device and payment pattern do not align
+```
+
+Safe wording:
+
+```text
+Do not say "high amount means fraud." Say: "high amount is one risk signal."
+The model changes its decision because several risk signals appear together and
+because those signals match patterns learned from previous fraud examples.
 ```
 
 ## 9. Results Slide
