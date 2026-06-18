@@ -499,6 +499,36 @@ The model changes its decision because several risk signals appear together and
 because those signals match patterns learned from previous fraud examples.
 ```
 
+If asked why increasing only Amount can lower the fraud probability:
+
+```text
+This is expected behavior for this model. The fraud score is not a rule like
+"more money means more fraud." It is a nonlinear score from all 316 features.
+Amount is only one feature, and it is transformed with log1p, normalized, and
+combined with time, velocity, identity, device, email, history, and interaction
+features.
+
+So if I only increase Amount but keep everything else reliable -- matched email,
+normal time, stable account, clean history, low velocity -- the model may still
+see the transaction as a normal high-value purchase. In some learned patterns,
+small unusual transactions can be more fraud-like than large transactions with
+stable identity signals.
+
+The important demo point is that a single metric change is unreliable for fraud
+interpretation. Fraud risk should be explained by the combination of signals,
+not by one field alone. That is why the Suspicious preset changes multiple
+signals together: high amount plus unusual time, identity mismatch, high
+velocity, weak account history, and prior fraud indicators.
+```
+
+Short version to say live:
+
+```text
+Amount alone is not monotonic. A high amount with normal identity and clean
+history can still look legitimate. The model becomes confident when several
+risk signals stack together, not when only one field changes.
+```
+
 ## 9. Results Slide
 
 Use current stable result:

@@ -435,7 +435,8 @@ function App() {
             <Field label="Amount">
               <input
                 type="number"
-                min="0"
+                min={numericRules.amount.min}
+                max={numericRules.amount.max}
                 step="0.01"
                 value={form.amount}
                 onChange={(event) => updateField("amount", event.target.value)}
@@ -452,8 +453,8 @@ function App() {
             <Field label="Hour">
               <input
                 type="number"
-                min="0"
-                max="23"
+                min={numericRules.hour_of_day_local.min}
+                max={numericRules.hour_of_day_local.max}
                 value={form.hour_of_day_local}
                 onChange={(event) => updateField("hour_of_day_local", event.target.value)}
                 onBlur={() => commitField("hour_of_day_local")}
@@ -508,19 +509,19 @@ function App() {
 
           <div className={`advanced-region ${advancedOpen ? "open" : ""}`}>
             <div className="advanced-grid">
-              <NumberField label="Tx count 1h" value={form.advanced.tx_count_1h} min="0" max="500" onChange={(value) => updateAdvanced("tx_count_1h", value)} onBlur={() => commitAdvanced("tx_count_1h")} />
-              <NumberField label="Tx count 24h" value={form.advanced.tx_count_24h} min="0" max="5000" onChange={(value) => updateAdvanced("tx_count_24h", value)} onBlur={() => commitAdvanced("tx_count_24h")} />
-              <NumberField label="Geo velocity" value={form.advanced.geo_velocity_kmh} min="0" max="2000" onChange={(value) => updateAdvanced("geo_velocity_kmh", value)} onBlur={() => commitAdvanced("geo_velocity_kmh")} />
-              <NumberField label="Distance km" value={form.advanced.distance_km} min="0" max="20000" onChange={(value) => updateAdvanced("distance_km", value)} onBlur={() => commitAdvanced("distance_km")} />
-              <NumberField label="Days since tx" value={form.advanced.days_since_last_tx} min="0" max="365" onChange={(value) => updateAdvanced("days_since_last_tx", value)} onBlur={() => commitAdvanced("days_since_last_tx")} />
-              <NumberField label="Account age" value={form.advanced.account_age_days} min="0" max="10000" onChange={(value) => updateAdvanced("account_age_days", value)} onBlur={() => commitAdvanced("account_age_days")} />
-              <NumberField label="History count" value={form.advanced.history_count} min="0" max="1000000" onChange={(value) => updateAdvanced("history_count", value)} onBlur={() => commitAdvanced("history_count")} />
-              <NumberField label="History fraud rate" value={form.advanced.history_fraud_rate} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("history_fraud_rate", value)} onBlur={() => commitAdvanced("history_fraud_rate")} />
-              <NumberField label="Prior fraud count" value={form.advanced.prior_fraud_count} min="0" max="10000" onChange={(value) => updateAdvanced("prior_fraud_count", value)} onBlur={() => commitAdvanced("prior_fraud_count")} />
-              <NumberField label="Chargebacks" value={form.advanced.chargeback_count} min="0" max="100" onChange={(value) => updateAdvanced("chargeback_count", value)} onBlur={() => commitAdvanced("chargeback_count")} />
-              <NumberField label="Merchant frequency" value={form.advanced.merchant_frequency} min="0" max="10000000" onChange={(value) => updateAdvanced("merchant_frequency", value)} onBlur={() => commitAdvanced("merchant_frequency")} />
-              <NumberField label="Identity missing" value={form.advanced.identity_missing_rate} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("identity_missing_rate", value)} onBlur={() => commitAdvanced("identity_missing_rate")} />
-              <NumberField label="Identity signal" value={form.advanced.suspicious_identity_signal} min="0" max="1" step="0.01" onChange={(value) => updateAdvanced("suspicious_identity_signal", value)} onBlur={() => commitAdvanced("suspicious_identity_signal")} />
+              <NumberField label="Tx count 1h" value={form.advanced.tx_count_1h} rule={numericRules.tx_count_1h} onChange={(value) => updateAdvanced("tx_count_1h", value)} onBlur={() => commitAdvanced("tx_count_1h")} />
+              <NumberField label="Tx count 24h" value={form.advanced.tx_count_24h} rule={numericRules.tx_count_24h} onChange={(value) => updateAdvanced("tx_count_24h", value)} onBlur={() => commitAdvanced("tx_count_24h")} />
+              <NumberField label="Geo velocity" value={form.advanced.geo_velocity_kmh} rule={numericRules.geo_velocity_kmh} onChange={(value) => updateAdvanced("geo_velocity_kmh", value)} onBlur={() => commitAdvanced("geo_velocity_kmh")} />
+              <NumberField label="Distance km" value={form.advanced.distance_km} rule={numericRules.distance_km} onChange={(value) => updateAdvanced("distance_km", value)} onBlur={() => commitAdvanced("distance_km")} />
+              <NumberField label="Days since tx" value={form.advanced.days_since_last_tx} rule={numericRules.days_since_last_tx} onChange={(value) => updateAdvanced("days_since_last_tx", value)} onBlur={() => commitAdvanced("days_since_last_tx")} />
+              <NumberField label="Account age" value={form.advanced.account_age_days} rule={numericRules.account_age_days} onChange={(value) => updateAdvanced("account_age_days", value)} onBlur={() => commitAdvanced("account_age_days")} />
+              <NumberField label="History count" value={form.advanced.history_count} rule={numericRules.history_count} onChange={(value) => updateAdvanced("history_count", value)} onBlur={() => commitAdvanced("history_count")} />
+              <NumberField label="History fraud rate" value={form.advanced.history_fraud_rate} rule={numericRules.history_fraud_rate} step="0.01" onChange={(value) => updateAdvanced("history_fraud_rate", value)} onBlur={() => commitAdvanced("history_fraud_rate")} />
+              <NumberField label="Prior fraud count" value={form.advanced.prior_fraud_count} rule={numericRules.prior_fraud_count} onChange={(value) => updateAdvanced("prior_fraud_count", value)} onBlur={() => commitAdvanced("prior_fraud_count")} />
+              <NumberField label="Chargebacks" value={form.advanced.chargeback_count} rule={numericRules.chargeback_count} onChange={(value) => updateAdvanced("chargeback_count", value)} onBlur={() => commitAdvanced("chargeback_count")} />
+              <NumberField label="Merchant frequency" value={form.advanced.merchant_frequency} rule={numericRules.merchant_frequency} onChange={(value) => updateAdvanced("merchant_frequency", value)} onBlur={() => commitAdvanced("merchant_frequency")} />
+              <NumberField label="Identity missing" value={form.advanced.identity_missing_rate} rule={numericRules.identity_missing_rate} step="0.01" onChange={(value) => updateAdvanced("identity_missing_rate", value)} onBlur={() => commitAdvanced("identity_missing_rate")} />
+              <NumberField label="Identity signal" value={form.advanced.suspicious_identity_signal} rule={numericRules.suspicious_identity_signal} step="0.01" onChange={(value) => updateAdvanced("suspicious_identity_signal", value)} onBlur={() => commitAdvanced("suspicious_identity_signal")} />
             </div>
             <div className="toggle-grid compact">
               <Toggle label="Device present" checked={form.advanced.device_present} onChange={(value) => updateAdvanced("device_present", value)} />
@@ -583,13 +584,13 @@ function Field({ label, icon: Icon, children }) {
   );
 }
 
-function NumberField({ label, value, onChange, onBlur, min, max, step = "1" }) {
+function NumberField({ label, value, onChange, onBlur, rule, step = "1" }) {
   return (
     <Field label={label}>
       <input
         type="number"
-        min={min}
-        max={max}
+        min={rule.min}
+        max={rule.max}
         step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
