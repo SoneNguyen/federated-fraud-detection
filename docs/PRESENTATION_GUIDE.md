@@ -281,7 +281,7 @@ Demo navigation:
 
 5. Click Score.
    Point to the Decision panel. Explain fraud probability, decision label, risk
-   band, selected model version, USD amount, FX rate/source, and stale-FX flag.
+   band, selected model version, USD amount, exchange-rate source, and stale-rate flag.
    Short bridge: "The model should keep this below the threshold, so the
    decision should stay in approve or low-risk territory."
 
@@ -303,9 +303,10 @@ Demo navigation:
    Short bridge: "The point is not that the button is hardcoded. The same model
    and threshold are used; the score changes because the feature vector changed."
 
-8. Toggle Live FX off and change Currency if needed.
-   Explain that currency conversion happens in the backend. Live FX is attempted
-   first; static fallback keeps the demo stable if the currency API is down.
+8. Toggle Live exchange rate off and change Currency if needed.
+   Explain that currency conversion happens in the backend. A live exchange
+   rate is attempted first; static fallback keeps the demo stable if the
+   currency API is down.
 
 9. Click refresh in the top-right if the backend is restarted.
    Explain resilience: the GUI has explicit online/offline/no-model states and
@@ -478,7 +479,7 @@ Reliable preset:
 - daytime hour -> ordinary timing
 - matched email/domain -> consistent identity
 - established account age -> enough normal history
-- low tx_count and low geo_velocity -> no rapid attack pattern
+- low recent transaction count and low geographic velocity -> no rapid attack pattern
 - low history_fraud_rate and prior_fraud_count -> clean backward-looking history
 
 Suspicious preset:
@@ -486,7 +487,7 @@ Suspicious preset:
 - late hour -> less typical behavior
 - email mismatch and identity_missing_rate -> identity uncertainty
 - new account age -> weak trusted history
-- high tx_count, distance, and geo_velocity -> possible automated abuse or account takeover
+- high recent transaction count, distance, and geographic velocity -> possible automated abuse or account takeover
 - chargeback/prior fraud/history fraud rate -> past risky behavior in related identifiers
 - card-device mismatch -> device and payment pattern do not align
 ```

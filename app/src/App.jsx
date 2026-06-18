@@ -498,7 +498,7 @@ function App() {
             <Toggle label="Email match" checked={form.email_domain_match} onChange={(value) => updateField("email_domain_match", value)} />
             <Toggle label="Payer free email" checked={form.payer_free_email} onChange={(value) => updateField("payer_free_email", value)} />
             <Toggle label="Receiver free email" checked={form.receiver_free_email} onChange={(value) => updateField("receiver_free_email", value)} />
-            <Toggle label="Live FX" checked={form.use_live_fx} onChange={(value) => updateField("use_live_fx", value)} />
+            <Toggle label="Live exchange rate" checked={form.use_live_fx} onChange={(value) => updateField("use_live_fx", value)} />
           </div>
 
           <button type="button" className="advanced-toggle" onClick={() => setAdvancedOpen((open) => !open)}>
@@ -509,11 +509,11 @@ function App() {
 
           <div className={`advanced-region ${advancedOpen ? "open" : ""}`}>
             <div className="advanced-grid">
-              <NumberField label="Tx count 1h" value={form.advanced.tx_count_1h} rule={numericRules.tx_count_1h} onChange={(value) => updateAdvanced("tx_count_1h", value)} onBlur={() => commitAdvanced("tx_count_1h")} />
-              <NumberField label="Tx count 24h" value={form.advanced.tx_count_24h} rule={numericRules.tx_count_24h} onChange={(value) => updateAdvanced("tx_count_24h", value)} onBlur={() => commitAdvanced("tx_count_24h")} />
-              <NumberField label="Geo velocity" value={form.advanced.geo_velocity_kmh} rule={numericRules.geo_velocity_kmh} onChange={(value) => updateAdvanced("geo_velocity_kmh", value)} onBlur={() => commitAdvanced("geo_velocity_kmh")} />
+              <NumberField label="Transactions in 1 hour" value={form.advanced.tx_count_1h} rule={numericRules.tx_count_1h} onChange={(value) => updateAdvanced("tx_count_1h", value)} onBlur={() => commitAdvanced("tx_count_1h")} />
+              <NumberField label="Transactions in 24 hours" value={form.advanced.tx_count_24h} rule={numericRules.tx_count_24h} onChange={(value) => updateAdvanced("tx_count_24h", value)} onBlur={() => commitAdvanced("tx_count_24h")} />
+              <NumberField label="Geographic velocity" value={form.advanced.geo_velocity_kmh} rule={numericRules.geo_velocity_kmh} onChange={(value) => updateAdvanced("geo_velocity_kmh", value)} onBlur={() => commitAdvanced("geo_velocity_kmh")} />
               <NumberField label="Distance km" value={form.advanced.distance_km} rule={numericRules.distance_km} onChange={(value) => updateAdvanced("distance_km", value)} onBlur={() => commitAdvanced("distance_km")} />
-              <NumberField label="Days since tx" value={form.advanced.days_since_last_tx} rule={numericRules.days_since_last_tx} onChange={(value) => updateAdvanced("days_since_last_tx", value)} onBlur={() => commitAdvanced("days_since_last_tx")} />
+              <NumberField label="Days since last transaction" value={form.advanced.days_since_last_tx} rule={numericRules.days_since_last_tx} onChange={(value) => updateAdvanced("days_since_last_tx", value)} onBlur={() => commitAdvanced("days_since_last_tx")} />
               <NumberField label="Account age" value={form.advanced.account_age_days} rule={numericRules.account_age_days} onChange={(value) => updateAdvanced("account_age_days", value)} onBlur={() => commitAdvanced("account_age_days")} />
               <NumberField label="History count" value={form.advanced.history_count} rule={numericRules.history_count} onChange={(value) => updateAdvanced("history_count", value)} onBlur={() => commitAdvanced("history_count")} />
               <NumberField label="History fraud rate" value={form.advanced.history_fraud_rate} rule={numericRules.history_fraud_rate} step="0.01" onChange={(value) => updateAdvanced("history_fraud_rate", value)} onBlur={() => commitAdvanced("history_fraud_rate")} />
@@ -546,8 +546,8 @@ function App() {
                 <InfoLine label="Threshold" value={formatNumber(result.metadata?.threshold, 4)} />
                 <InfoLine label="Model" value={result.model_version} />
                 <InfoLine label="USD amount" value={`$${formatMoney(result.metadata?.amount_usd)}`} />
-                <InfoLine label="FX" value={`${result.metadata?.fx_source || "n/a"} @ ${formatNumber(result.metadata?.fx_rate, 5)}`} />
-                <InfoLine label="FX stale" value={result.metadata?.stale_fx_flag ? "Yes" : "No"} />
+                <InfoLine label="Exchange rate" value={`${result.metadata?.fx_source || "n/a"} @ ${formatNumber(result.metadata?.fx_rate, 5)}`} />
+                <InfoLine label="Stale rate" value={result.metadata?.stale_fx_flag ? "Yes" : "No"} />
               </div>
             </div>
           ) : (
