@@ -310,7 +310,7 @@ function App() {
             <Landmark size={22} />
           </div>
           <div>
-            <p className="eyebrow">Vault Fraud Console</p>
+            <p className="eyebrow">Fraud Console</p>
             <h1>Transaction screening</h1>
           </div>
         </div>
@@ -351,7 +351,7 @@ function App() {
               recommended && (
                 <button className="small-command" onClick={() => useModel(recommended.checkpoint)}>
                   <ShieldCheck size={15} />
-                  Use recommended
+                  Recommended
                 </button>
               )
             }
@@ -407,7 +407,7 @@ function App() {
             title="Transaction"
             action={
               <button type="submit" className="primary-command" disabled={loadingPrediction || !canScore}>
-                {loadingPrediction ? <Loader2 size={17} className="spin" /> : <Play size={17} />}
+                {loadingPrediction && <Loader2 size={17} className="spin" />}
                 Score
               </button>
             }
@@ -486,13 +486,15 @@ function App() {
             ]}
             onChange={(value) => updateField("card_type", value)}
           />
-          <Field label="Card brand">
-            <select value={form.card_brand} onChange={(event) => updateField("card_brand", event.target.value)}>
-              {["visa", "mastercard", "american express", "discover", "other"].map((brand) => (
-                <option key={brand} value={brand}>{titleCase(brand)}</option>
-              ))}
-            </select>
-          </Field>
+          <div className="form-grid compact-grid">
+            <Field label="Card brand">
+              <select value={form.card_brand} onChange={(event) => updateField("card_brand", event.target.value)}>
+                {["visa", "mastercard", "american express", "discover", "other"].map((brand) => (
+                  <option key={brand} value={brand}>{titleCase(brand)}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
 
           <div className="toggle-grid">
             <Toggle label="Email match" checked={form.email_domain_match} onChange={(value) => updateField("email_domain_match", value)} />
@@ -570,7 +572,7 @@ function PanelHeading({ icon: Icon, title, action }) {
         <Icon size={18} />
         <h2>{title}</h2>
       </div>
-      {action}
+      {action && <div className="panel-action">{action}</div>}
     </div>
   );
 }

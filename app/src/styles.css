@@ -68,7 +68,6 @@ button:disabled {
 .brand,
 .top-actions,
 .panel-heading,
-.panel-heading > div,
 .status-pill,
 .notice,
 .metric-tile,
@@ -220,7 +219,7 @@ h2 {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(310px, 0.95fr) minmax(360px, 1.2fr) minmax(300px, 0.9fr);
+  grid-template-columns: minmax(360px, 1fr) minmax(380px, 1.1fr) minmax(300px, 0.85fr);
   gap: 16px;
   align-items: start;
 }
@@ -241,14 +240,32 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
-.panel-heading > div {
+.panel-heading > div:first-child {
+  display: flex;
+  align-items: center;
   gap: 9px;
   min-width: 0;
+  flex: 0 1 auto;
+}
+
+.panel-heading h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel-heading svg {
   color: var(--brand);
   flex: 0 0 auto;
+}
+
+.panel-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  width: auto;
 }
 
 .small-command,
@@ -258,6 +275,7 @@ h2 {
   border-radius: 8px;
   font-weight: 800;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .small-command {
@@ -268,6 +286,8 @@ h2 {
 }
 
 .primary-command {
+  justify-content: center;
+  width: 82px;
   padding: 0 16px;
   border: 1px solid var(--brand-strong);
   background: var(--brand);
@@ -463,6 +483,11 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 16px;
+}
+
+.compact-grid {
+  padding-top: 0;
+  padding-bottom: 12px;
 }
 
 .field {
@@ -741,7 +766,7 @@ select:focus {
   }
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1340px) {
   .workspace {
     grid-template-columns: minmax(320px, 1fr) minmax(340px, 1fr);
   }
