@@ -1006,3 +1006,13 @@ membership detection and replicated server failover.
   https://flower.ai/docs/framework/ref-api/flwr.serverapp.strategy.FedAvg.html
 - IEEE-CIS Fraud Detection:
   https://www.kaggle.com/competitions/ieee-fraud-detection
+
+## 21. Model Architecture ExplanationF
+316 features
+Because the model uses the engineered fraud schema: amount, time, product/card/email/device signals, frequency encodings, selected IEEE-CIS V features, identity features, and backward-looking history features. The GUI/API must follow this same feature order.
+256 hidden dimensions
+256 is a practical middle ground. The input has 316 features, so 256 is large enough to learn feature interactions, but still small enough for federated training, faster client updates, and lower communication cost. Bigger layers would increase model transfer size every round.
+3 residual MLP blocks
+Fraud is not usually one obvious field; it is feature interaction. Residual blocks let the model learn deeper interactions while keeping training stable. Three blocks is enough depth to model nonlinear patterns without making the federated client training too heavy.
+LayerNorm + ReLU head
+LayerNorm is better than BatchNorm here because federated clients have different fraud rates and different local distributions. BatchNorm keeps running mean/variance, and averaging those across clients can produce statistics that match nobody. LayerNorm normalizes within each sample, so it is more stable under non-IID federated data

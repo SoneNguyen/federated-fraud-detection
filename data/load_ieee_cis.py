@@ -38,7 +38,8 @@ RAW_PROC = Path("data/processed")
 def _log1p_col(df: pd.DataFrame, col: str, clip_hi: float) -> pd.Series:
     if col not in df:
         return pd.Series(0.0, index=df.index, dtype="float32")
-    return np.log1p(df[col].fillna(0).clip(0, clip_hi).astype("float64")).astype("float32")
+    values = df[col].fillna(0).clip(0, clip_hi).astype("float64")
+    return pd.Series(np.log1p(values.to_numpy()), index=df.index, dtype="float32")
 
 
 def _missing_flag(df: pd.DataFrame, col: str) -> pd.Series:
