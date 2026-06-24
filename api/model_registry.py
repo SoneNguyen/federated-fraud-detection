@@ -37,7 +37,7 @@ def list_model_records(
     checkpoints = [
         p
         for p in checkpoint_dir.glob("*.pt")
-        if p.is_file() and p.name != "rollback_active.pt"
+        if p.is_file() and re.fullmatch(r"round_\d+\.pt", p.name)
     ]
     history = _history_by_round(results_dir / "evaluation_history.json")
     latest = _safe_json(results_dir / "latest_metrics.json")
@@ -145,7 +145,7 @@ def _history_by_round(path: Path) -> dict[int, dict[str, Any]]:
 
 def _target_eval_by_name(path: Path) -> dict[str, dict[str, Any]]:
     data = _safe_json(path)
-    candidates = data.get("candidates", [])
+    candidates = data.get("candidates", data.get("all", []))
     out = {}
     if isinstance(candidates, list):
         for row in candidates:
@@ -236,12 +236,6 @@ def _score(name: str, metrics: dict[str, Any]) -> tuple[float, dict[str, float]]
         tag_bonus += 0.05
     if metrics.get("client_floor_met") is True:
         tag_bonus += 0.05
-    if name.startswith("target_met_round_"):
-        tag_bonus += 0.025
-    if name.startswith("best_low_loss_target_round_"):
-        tag_bonus += 0.035
-    if name.startswith("best_target_round_"):
-        tag_bonus += 0.025
     if _kind(name) == "global":
         tag_bonus += 0.02
     if _kind(name) == "client":
@@ -312,8 +306,6 @@ def _reason(name: str, metrics: dict[str, Any]) -> str:
         return "Worst-client floor reached"
     if metrics.get("target_met") is True or _meets(TARGETS, metrics):
         return "Core target reached"
-    if name.startswith("best_low_loss_target_round_"):
-        return "Lowest loss among target candidates"
     if _kind(name) == "client":
         return "Client specialist checkpoint"
     return "Ranked by available metrics"
@@ -322,16 +314,6 @@ def _reason(name: str, metrics: dict[str, Any]) -> str:
 def _kind(name: str) -> str:
     if name.startswith("client_"):
         return "client"
-    if name.startswith("best_low_loss"):
-        return "low-loss"
-    if name.startswith("best_target"):
-        return "best-target"
-    if name.startswith("target_met"):
-        return "target-met"
-    if name.startswith("high_target"):
-        return "high-band"
-    if name.startswith("client_floor"):
-        return "client-floor"
     if name.startswith("round_"):
         return "global"
     return "other"

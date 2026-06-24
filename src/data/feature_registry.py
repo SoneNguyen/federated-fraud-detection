@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = "fraud-history"
+SCHEMA_VERSION = "fraud-history-scalable"
 LABEL = "is_fraud"
 
 CORE_FEATURES = [
@@ -27,9 +27,21 @@ CORE_FEATURES = [
     "day_of_week",
     "tx_time_norm",
     "week_of_period",
+    "hour_sin",
+    "hour_cos",
+    "day_sin",
+    "day_cos",
     "risky_hour_flag",
     "early_morning_high_value",
     "weekend_high_value",
+    "amount_prior_z",
+    "amount_prior_log_ratio",
+    "count_acceleration_1h",
+    "volume_pressure_24h",
+    "high_velocity_high_value",
+    "identity_risk_score",
+    "rule_stack_risk_score",
+    "rare_identity_score",
     "prod_W",
     "prod_H",
     "prod_C",
@@ -150,6 +162,7 @@ BINARY_FEATURES = {
     in {
         "early_morning_high_value",
         "weekend_high_value",
+        "high_velocity_high_value",
         "email_domain_match",
         "p_email_free",
         "r_email_free",

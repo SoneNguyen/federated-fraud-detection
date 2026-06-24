@@ -1,8 +1,9 @@
 [project]
 name = "fl-fraud-detection"
 version = "0.1.0"
-description = "Add your description here"
+description = "Federated fraud detection with scalable Flower training and transaction screening"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.137.0",
@@ -34,12 +35,24 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = [
     "api*",
-    "data*",
+    "dataset*",
     "drift*",
     "model*",
     "scripts*",
     "src*",
 ]
+
+[tool.flwr.app]
+publisher = "local"
+
+[tool.flwr.app.components]
+serverapp = "src.flower_app.server_app:app"
+clientapp = "src.flower_app.client_app:app"
+
+[tool.flwr.app.config]
+num-clients = 3
+num-server-rounds = 100
+model-run = "3_clients"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

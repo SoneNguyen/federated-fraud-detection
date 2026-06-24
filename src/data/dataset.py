@@ -89,6 +89,7 @@ def make_loaders(
     """Load data and return deterministic temporal (train_loader, val_loader)."""
     train_ds, val_ds = split_dataset(path, val_split)
     ds = train_ds.dataset
+    assert isinstance(ds, FraudDataset)
 
     train_indices = torch.as_tensor(list(train_ds.indices), dtype=torch.long)
     train_labels = ds.y[train_indices].detach().cpu().numpy().astype(int)
@@ -121,7 +122,7 @@ def make_loaders(
 
 if __name__ == "__main__":
     for i in range(3):
-        p = f"data/processed/client_{i}/transactions_normalized.parquet"
+        p = f"dataset/processed/client_{i}/transactions_normalized.parquet"
         tl, _ = make_loaders(p)
         X, y = next(iter(tl))
         assert X.shape[1] == len(FEATURE_ORDER), f"Bad feature count: {X.shape[1]}"

@@ -1,14 +1,5 @@
-"""Post-training probability calibration using Platt scaling (logistic regression).
+"""Post-training probability calibration using Platt scaling."""
 
-A sigmoid output is not guaranteed to be well-calibrated — a score of 0.7
-does not necessarily mean 70% of transactions with that score are fraud.
-Calibration corrects this by fitting a logistic regression on a held-out
-validation set and saving the calibration parameters.
-
-Usage:
-    python -m model.calibrate --checkpoint checkpoints/round_010.pt \
-        --data data/processed/client_0/transactions_normalized.parquet
-"""
 from __future__ import annotations
 
 import argparse
@@ -17,50 +8,55 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 
-from src.data.dataset import FEATURE_ORDER, LABEL, make_loaders
+from src.data.dataset import FEATURE_ORDER, LABEL
 from src.model.fraud_mlp import FraudMLP
 
 
-def get_raw_scores(model: torch.nn.Module, parquet_path: str,
-                   val_split: float = 0.15) -> tuple[np.ndarray, np.ndarray]:
-    """Run the model on the validation split and return (probabilities, labels)."""
+def get_raw_scores(
+    model: torch.nn.Module,
+    parquet_path: str,
+    val_split: float = 0.15,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run the model on the validation split and return probabilities and labels."""
     import pandas as pd
 
     df = pd.read_parquet(parquet_path)
     df = df.sample(frac=1, random_state=0).reset_index(drop=True)
-    n = len(df)
-    split = int(n * (1 - val_split))
+    split = int(len(df) * (1 - val_split))
     val_df = df.iloc[split:].reset_index(drop=True)
 
-    X = torch.tensor(val_df[FEATURE_ORDER].values, dtype=torch.float32)
-    y = val_df[LABEL].values.astype(np.float32)
+    features = torch.tensor(val_df[FEATURE_ORDER].to_numpy(), dtype=torch.float32)
+    labels = val_df[LABEL].to_numpy(dtype=np.float32)
 
     model.eval()
     with torch.no_grad():
-        X = X.to(getattr(model, "device", torch.device("cpu")))
-        probs = torch.sigmoid(model(X)).cpu().numpy().squeeze()
+        device = getattr(model, "device", torch.device("cpu"))
+        features = features.to(device)
+        probs = torch.sigmoid(model(features)).cpu().numpy().squeeze()
 
-    return probs, y
+    return np.asarray(probs), np.asarray(labels)
 
 
-def fit_platt_scaling(probs: np.ndarray,
-                      labels: np.ndarray) -> LogisticRegression:
+def fit_platt_scaling(
+    probs: np.ndarray,
+    labels: np.ndarray,
+) -> LogisticRegression:
     """Fit a logistic regression on raw scores to calibrate probabilities."""
-    lr = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
-    lr.fit(probs.reshape(-1, 1), labels)
-    return lr
+    calibrator = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+    calibrator.fit(probs.reshape(-1, 1), labels)
+    return calibrator
 
 
-def calibrate(checkpoint_path: str, data_path: str,
-              out_dir: str = "checkpoints") -> dict:
-    """Full calibration pipeline. Returns calibration coefficients."""
+def calibrate(
+    checkpoint_path: str,
+    data_path: str,
+    out_dir: str = "checkpoints",
+) -> dict[str, float | int | str]:
+    """Fit and save calibration coefficients."""
     model = FraudMLP()
-    model.load_state_dict(
-        torch.load(checkpoint_path, map_location="cpu")
-    )
+    model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
 
     probs, labels = get_raw_scores(model, data_path)
     calibrator = fit_platt_scaling(probs, labels)
@@ -75,27 +71,34 @@ def calibrate(checkpoint_path: str, data_path: str,
         "data": data_path,
         "platt_coef": coef,
         "platt_intercept": intercept,
-        "n_val_samples": len(labels),
+        "n_val_samples": int(len(labels)),
         "val_fraud_rate": float(labels.mean()),
     }
     calib_path = out / "calibration_params.json"
-    calib_path.write_text(json.dumps(result, indent=2))
+    calib_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"Calibration saved to {calib_path}")
-    print(f"  Platt coef={coef:.4f}  intercept={intercept:.4f}")
+    print(f"platt_coef={coef:.4f} platt_intercept={intercept:.4f}")
     return result
 
 
-def apply_calibration(raw_prob: float, calib_path: str = "checkpoints/calibration_params.json") -> float:
+def apply_calibration(
+    raw_prob: float,
+    calib_path: str = "checkpoints/calibration_params.json",
+) -> float:
     """Apply saved Platt scaling to a raw sigmoid probability."""
-    params = json.loads(Path(calib_path).read_text())
+    params = json.loads(Path(calib_path).read_text(encoding="utf-8"))
     logit = params["platt_coef"] * raw_prob + params["platt_intercept"]
     return float(1.0 / (1.0 + np.exp(-logit)))
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--data",       required=True)
-    parser.add_argument("--out",        default="checkpoints")
+    parser.add_argument("--data", required=True)
+    parser.add_argument("--out", default="checkpoints")
     args = parser.parse_args()
     calibrate(args.checkpoint, args.data, args.out)
+
+
+if __name__ == "__main__":
+    main()

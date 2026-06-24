@@ -10,11 +10,10 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.2",
-    "vite": "^8.0.16",
+    "lucide-react": "^0.294.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.294.0",
-    "recharts": "^2.15.4"
-  },
-  "devDependencies": {}
+    "recharts": "^3.9.0",
+    "vite": "^8.0.16"
+  }
 }

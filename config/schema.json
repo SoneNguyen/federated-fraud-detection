@@ -1,9 +1,9 @@
 {
   "feature_schema": {
-    "version": "fraud-history",
+    "version": "fraud-history-scalable",
     "source": "src/data/feature_registry.py",
-    "description": "The active feature order is generated in src/data/feature_registry.py to keep training, preprocessing, API, and evaluation in one contract. This contract adds backward-looking entity history and fraud-history features for cards, addresses, emails, devices, and pair keys.",
-    "total_features": 316,
+    "description": "The active feature order is generated in src/data/feature_registry.py to keep training, preprocessing, API, and evaluation in one contract. This contract adds backward-looking entity history, fraud-history features, cyclic time features, burst features, and risk-shape signals for cards, addresses, emails, devices, and pair keys.",
+    "total_features": 328,
     "label": {
       "name": "is_fraud",
       "dtype": "int8",

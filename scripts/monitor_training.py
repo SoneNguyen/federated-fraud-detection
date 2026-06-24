@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.run_paths import results_dir as default_results_dir
+
 
 def _load(path: Path) -> dict | list | None:
     if not path.exists():
@@ -19,13 +21,16 @@ def _fmt(value: object) -> str:
 
 
 def main() -> None:
-    results_dir = Path("results")
+    results_dir = default_results_dir()
     latest = _load(results_dir / "latest_metrics.json")
     best = _load(results_dir / "best_round.json")
     history = _load(results_dir / "evaluation_history.json")
 
     if latest is None:
         print("No metrics yet. Start the server and wait for the first evaluation round.")
+        return
+    if not isinstance(latest, dict):
+        print("Latest metrics file is malformed.")
         return
 
     print("Latest round")
@@ -71,7 +76,7 @@ def main() -> None:
         if key in latest:
             print(f"  {key:14s}: {_fmt(latest[key])}")
 
-    if best:
+    if isinstance(best, dict) and best:
         print("\nBest target round")
         for key in (
             "round",
@@ -95,7 +100,7 @@ def main() -> None:
 
     if isinstance(history, list):
         print(f"\nEvaluated rounds: {len(history)}")
-        recent = history[-5:]
+        recent = [row for row in history[-5:] if isinstance(row, dict)]
         if recent:
             print("\nRecent pattern")
             print("  rnd  state       loss     d_loss   auprc/min  f1/min    train_d")

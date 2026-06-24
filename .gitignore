@@ -15,12 +15,21 @@ coverage.xml
 htmlcov/
 
 # Data & Checkpoints
-data/ieee_cis/
-data/raw/
-data/processed/
+dataset/ieee_cis/
+dataset/bankaccount/
+dataset/creditcard/
+dataset/synthetic/
+dataset/vietnam_synthetic/
+dataset/drift_ref/
+dataset/raw/
+dataset/processed/
+dataset/processed_custom/
+dataset/processed_vietnam/
+dataset/processed_vietnam_synthetic/
+dataset/processed_vietnam_synthetic_smoke/
 checkpoints/
-!data/raw/.gitkeep      # Keeps the empty folder in git
-!data/processed/.gitkeep
+!dataset/raw/.gitkeep      # Keeps the empty folder in git
+!dataset/processed/.gitkeep
 
 # Large dataset artifacts
 *.parquet
@@ -49,6 +58,17 @@ status-cleanup.txt
 dist/
 build/
 *.egg-info/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
 
 # Frontend local/generated files
 app/node_modules/

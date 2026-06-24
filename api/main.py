@@ -26,7 +26,7 @@ from api.schemas import (
     PredictionMetadata,
     Transaction,
 )
-from data.fx.converter import FXConversionError, FXConverter
+from dataset.fx.converter import FXConversionError, FXConverter
 from src.model.fraud_mlp import FraudMLP
 
 logger = logging.getLogger("api.main")
@@ -69,9 +69,63 @@ _model_record: dict = {}
 _decision_threshold: float = 0.5
 _fx = FXConverter()
 
-CHECKPOINT_DIR = Path("outputs/checkpoints")
+def _contains_round_checkpoint(path: Path) -> bool:
+    return path.exists() and any(path.glob("round_*.pt"))
+
+
+def _run_group_name() -> str | None:
+    explicit = os.environ.get("MODEL_RUN")
+    if explicit and explicit.strip():
+        return explicit.strip()
+    raw_clients = os.environ.get("NUM_CLIENTS")
+    if raw_clients and raw_clients.strip():
+        try:
+            clients = max(int(raw_clients), 1)
+        except ValueError:
+            return raw_clients.strip()
+        return f"{clients}_clients"
+    return None
+
+
+def _latest_run_dir(root: Path) -> Path | None:
+    candidates = [
+        path
+        for path in root.iterdir()
+        if path.is_dir() and _contains_round_checkpoint(path)
+    ] if root.exists() else []
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: max(p.stat().st_mtime for p in path.glob("round_*.pt")))
+
+
+def _default_checkpoint_dir() -> Path:
+    if os.environ.get("CHECKPOINT_DIR"):
+        return Path(os.environ["CHECKPOINT_DIR"])
+    root = Path("outputs/checkpoints")
+    run = _run_group_name()
+    if run:
+        return root / run
+    latest = _latest_run_dir(root)
+    if latest is not None:
+        return latest
+    return root
+
+
+def _default_results_dir(checkpoint_dir: Path) -> Path:
+    if os.environ.get("RESULTS_DIR"):
+        return Path(os.environ["RESULTS_DIR"])
+    root = Path("results")
+    if checkpoint_dir.parent == Path("outputs/checkpoints"):
+        return root / checkpoint_dir.name
+    run = _run_group_name()
+    if run:
+        return root / run
+    return root
+
+
+CHECKPOINT_DIR = _default_checkpoint_dir()
 NORM_PARAMS_PATH = Path("config/normalization_params.json")
-RESULTS_DIR = Path("results")
+RESULTS_DIR = _default_results_dir(CHECKPOINT_DIR)
 
 
 def _load_checkpoint(checkpoint_path: Path) -> tuple[FraudMLP, dict, str, dict, float]:
@@ -86,7 +140,7 @@ def _load_checkpoint(checkpoint_path: Path) -> tuple[FraudMLP, dict, str, dict, 
     if not NORM_PARAMS_PATH.exists():
         raise FileNotFoundError(
             f"Normalization params not found at {NORM_PARAMS_PATH}. "
-            "Run data/load_ieee_cis.py first."
+            "Run dataset/load_ieee_cis.py first."
         )
     with open(NORM_PARAMS_PATH) as f:
         norm = json.load(f)
@@ -95,6 +149,23 @@ def _load_checkpoint(checkpoint_path: Path) -> tuple[FraudMLP, dict, str, dict, 
     threshold = float(record.get("threshold", 0.5))
     logger.info("MODEL loaded=%s threshold=%.4f", checkpoint_path.name, threshold)
     return model, norm, checkpoint_path.stem, record, threshold
+
+
+def _run_info() -> dict:
+    metadata_path = CHECKPOINT_DIR / "active_training_run.json"
+    metadata = {}
+    if metadata_path.exists():
+        try:
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata = data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+    return {
+        "run": CHECKPOINT_DIR.name,
+        "checkpoint_dir": str(CHECKPOINT_DIR),
+        "results_dir": str(RESULTS_DIR),
+        "metadata": metadata,
+    }
 
 
 def _load_recommended_model() -> tuple[FraudMLP, dict, str, dict, float]:
@@ -109,9 +180,7 @@ def _load_recommended_model() -> tuple[FraudMLP, dict, str, dict, float]:
 
 
 def _load_latest_model() -> tuple[FraudMLP, dict, str, dict, float]:
-    checkpoints = sorted(
-        p for p in CHECKPOINT_DIR.glob("*.pt") if p.name != "rollback_active.pt"
-    )
+    checkpoints = sorted(CHECKPOINT_DIR.glob("round_*.pt"))
     if not checkpoints:
         raise FileNotFoundError(
             f"No checkpoints found in {CHECKPOINT_DIR.resolve()}. Run FL training first."
@@ -134,6 +203,7 @@ async def health() -> dict:
         "status": "ok",
         "model_version": _model_version,
         "threshold": _decision_threshold,
+        "run": _run_info(),
     }
 
 
@@ -143,6 +213,7 @@ async def model_version() -> dict:
         "model_version": _model_version,
         "threshold": _decision_threshold,
         "model": _model_record,
+        "run": _run_info(),
     }
 
 
@@ -159,6 +230,7 @@ async def reload() -> dict:
         "status": "reloaded",
         "model_version": _model_version,
         "threshold": _decision_threshold,
+        "run": _run_info(),
     }
 
 
@@ -171,6 +243,7 @@ async def models() -> dict:
         "threshold": _decision_threshold,
         "count": len(records),
         "models": records,
+        "run": _run_info(),
     }
 
 
@@ -321,9 +394,24 @@ def _demo_payload(tx: DemoTransaction, fx: dict) -> dict:
                 float(tx.day_of_week) * 24.0 + float(tx.hour_of_day_local)
             )
             / 168.0,
+            "hour_sin": math.sin(2.0 * math.pi * float(tx.hour_of_day_local) / 24.0),
+            "hour_cos": math.cos(2.0 * math.pi * float(tx.hour_of_day_local) / 24.0),
+            "day_sin": math.sin(2.0 * math.pi * float(tx.day_of_week) / 7.0),
+            "day_cos": math.cos(2.0 * math.pi * float(tx.day_of_week) / 7.0),
             "risky_hour_flag": float(tx.hour_of_day_local < 6 or tx.hour_of_day_local > 23),
             "early_morning_high_value": float((tx.hour_of_day_local < 6) and log_amount > 5),
             "weekend_high_value": float(tx.day_of_week in {0, 5, 6} and log_amount > 4),
+            "amount_prior_z": 0.0,
+            "amount_prior_log_ratio": 0.0,
+            "count_acceleration_1h": max(
+                -5.0,
+                min(5.0, log_count_1h - math.log1p((count_24h / 24.0) + 0.1)),
+            ),
+            "volume_pressure_24h": max(
+                -5.0,
+                min(12.0, math.log1p(min(amount_usd * count_24h, 5e9)) - log_count_24h),
+            ),
+            "high_velocity_high_value": float(log_amount > 5.0 and (count_1h >= 3 or velocity > 500)),
             "email_domain_match": float(tx.email_domain_match),
             "p_email_free": float(tx.payer_free_email),
             "r_email_free": float(tx.receiver_free_email),
@@ -334,6 +422,29 @@ def _demo_payload(tx: DemoTransaction, fx: dict) -> dict:
             "device_type_desktop": float(not adv.mobile_device),
             "card_device_mismatch": float(adv.card_device_mismatch),
             "new_account_high_value": float(float(adv.account_age_days) < 7 and log_amount > 5),
+            "identity_risk_score": max(
+                0.0,
+                min(
+                    1.0,
+                    0.25 * float(not tx.email_domain_match)
+                    + 0.15 * float(tx.payer_free_email and tx.receiver_free_email)
+                    + 0.25 * float(not adv.device_present)
+                    + 0.20 * float(float(adv.account_age_days) < 7 and log_amount > 5)
+                    + 0.15 * float(adv.card_device_mismatch),
+                ),
+            ),
+            "rule_stack_risk_score": max(
+                0.0,
+                min(
+                    1.0,
+                    0.18 * float(tx.hour_of_day_local < 6 or tx.hour_of_day_local > 23)
+                    + 0.22 * float(log_amount > 4.5)
+                    + 0.20 * float(count_1h >= 3)
+                    + 0.18 * float(not tx.email_domain_match)
+                    + 0.12 * float(float(adv.account_age_days) < 7 and log_amount > 5)
+                    + 0.10 * float(adv.card_device_mismatch),
+                ),
+            ),
             "c5_chargeback": math.log1p(min(float(adv.chargeback_count), 100.0)),
             "card1_freq": math.log1p(float(adv.merchant_frequency)),
             "card2_freq": math.log1p(float(adv.merchant_frequency)),
@@ -343,6 +454,7 @@ def _demo_payload(tx: DemoTransaction, fx: dict) -> dict:
             "device_info_freq": (
                 math.log1p(float(adv.merchant_frequency)) if adv.device_present else 0.0
             ),
+            "rare_identity_score": min(1.0, 1.0 / (float(adv.merchant_frequency) + 1.0)),
             "orig_currency": tx.currency,
             "stale_fx_flag": int(fx["stale"]),
         }

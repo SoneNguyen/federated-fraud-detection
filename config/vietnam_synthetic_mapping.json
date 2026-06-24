@@ -1,0 +1,39 @@
+{
+  "dataset_name": "vietnam_synthetic_payments",
+  "source": "Synthetic Vietnam-style banking, wallet, QR, and gateway transactions",
+  "time_unit": "auto",
+  "amount_to_usd_rate": 0.00004,
+  "default_product": "W",
+  "fraud_values": [1, "1", true, "true", "fraud", "chargeback", "scam"],
+  "product_map": {
+    "wallet_payment": "W",
+    "qr_transfer": "C",
+    "bank_transfer": "C",
+    "ecommerce": "W",
+    "bill_payment": "S",
+    "topup": "S",
+    "card_payment": "R"
+  },
+  "columns": {
+    "transaction_id": "transaction_id",
+    "transaction_time": "timestamp",
+    "amount": "amount_vnd",
+    "label": "is_fraud",
+    "product": "channel",
+    "card_type": "card_type",
+    "card_brand": "card_brand",
+    "payer_email": "payer_email",
+    "receiver_email": "receiver_email",
+    "account_id": "customer_id",
+    "merchant_id": "merchant_id",
+    "device_id": "device_id",
+    "device_type": "device_type",
+    "region": "province",
+    "distance_km": "distance_km",
+    "account_age_days": "account_age_days",
+    "days_since_last_transaction": "days_since_last_transaction",
+    "transactions_1h": "transactions_1h",
+    "transactions_24h": "transactions_24h",
+    "chargeback_count": "chargeback_count"
+  }
+}

@@ -17,6 +17,8 @@ from sklearn.metrics import (
 from src.model.fraud_mlp import FraudMLP
 from src.data.dataset import FEATURE_ORDER, LABEL
 from src.data.feature_registry import SCHEMA_VERSION
+from scripts.run_paths import checkpoint_dir as default_checkpoint_dir
+from scripts.run_paths import results_dir as default_results_dir
 
 with open("config/normalization_params.json") as f:
     NORM = json.load(f)
@@ -25,7 +27,7 @@ NUMERIC = list(NORM.keys())
 
 def load_and_prep(parquet_path: str) -> tuple[torch.Tensor, np.ndarray]:
     df = pd.read_parquet(parquet_path)
-    # Data is already normalized — just extract X, y
+    # Data is already normalized; extract X and y.
     X = torch.tensor(df[FEATURE_ORDER].values, dtype=torch.float32)
     y = np.asarray(df[LABEL].values, dtype=np.int8)
     return X, y
@@ -75,7 +77,7 @@ def evaluate(model: torch.nn.Module, X: torch.Tensor, y: np.ndarray) -> dict[str
 def run_evaluation():
     results = {}
     # Use client_0 test set as the common evaluation set
-    test_path = "data/processed/client_0/transactions_normalized.parquet"
+    test_path = "dataset/processed/client_0/transactions_normalized.parquet"
     df_test = pd.read_parquet(test_path)
     n = len(df_test); split = int(n * 0.85)
     X_test, y_test = load_and_prep(test_path)
@@ -88,7 +90,7 @@ def run_evaluation():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # 1. Federated model (latest checkpoint)
-    checkpoint_dir = Path("outputs/checkpoints")
+    checkpoint_dir = default_checkpoint_dir()
     fl_ckpts = sorted(checkpoint_dir.glob("round_*.pt"))
     if not fl_ckpts:
         raise FileNotFoundError(
@@ -136,7 +138,9 @@ def run_evaluation():
     print("\n=== Evaluation Results ===")
     for name, r in results.items():
         print(f"{name:15s}: AUPRC={r['AUPRC']:.4f} | AUROC={r['AUROC']:.4f} | F1={r['F1_best']:.4f}")
-    with open("results/evaluation_report.json", "w") as f:
+    results_dir = default_results_dir()
+    results_dir.mkdir(parents=True, exist_ok=True)
+    with open(results_dir / "evaluation_report.json", "w") as f:
         json.dump(results, f, indent=2)
     # Assert FL meets minimum bar
     assert results["federated"]["AUPRC"] >= 0.70, f"FL AUPRC {results['federated']['AUPRC']} below 0.70 target"

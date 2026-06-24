@@ -36,7 +36,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     Allows up to `max_requests` requests per `window_seconds` per client IP.
     Returns HTTP 429 when the limit is exceeded.
-    Does not persist across restarts — suitable for prototype use only.
+    Does not persist across restarts; suitable for prototype use only.
     """
 
     def __init__(self, app, max_requests: int = 1000, window_seconds: int = 60):

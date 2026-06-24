@@ -1,41 +1,42 @@
-# This module implements a prediction monitor that detects drift in the predicted probabilities of a model.
-#  It uses the ADWIN algorithm for drift detection and maintains a reference mean of the predicted probabilities to compare against recent predictions. 
-# The monitor provides a report with the drift status, score shift, and severity level.
-from river.drift import ADWIN
+"""Prediction-score drift monitoring."""
+
+from __future__ import annotations
+
 from collections import deque
-from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Optional
+from datetime import UTC, datetime
+
+from river.drift import ADWIN
 
 
-@dataclass
+@dataclass(frozen=True)
 class PredictionDriftReport:
-    timestamp:            str
-    drift_detected:       bool
-    score_shift:          float
-    mean_score_recent:    float
+    timestamp: str
+    drift_detected: bool
+    score_shift: float
+    mean_score_recent: float
     mean_score_reference: float
-    severity:             str
+    severity: str
 
 
 class PredictionMonitor:
     WARMUP = 1000
     WINDOW = 200
-    WARN  = 0.05
-    CRIT  = 0.15
+    WARN = 0.05
+    CRIT = 0.15
 
-    def __init__(self):
-        self.adwin    = ADWIN(delta=0.002)
-        self._warmup: list[float]    = []
-        self._ref_mean: Optional[float] = None
-        self._recent: deque[float]   = deque(maxlen=self.WINDOW)
+    def __init__(self) -> None:
+        self.adwin = ADWIN(delta=0.002)
+        self._warmup: list[float] = []
+        self._ref_mean: float | None = None
+        self._recent: deque[float] = deque(maxlen=self.WINDOW)
 
-    def update(self, prob: float) -> Optional[PredictionDriftReport]:
-        self._recent.append(prob)
-        adwin_drift = bool(self.adwin.update(prob))
+    def update(self, probability: float) -> PredictionDriftReport | None:
+        self._recent.append(probability)
+        adwin_drift = bool(self.adwin.update(probability))
 
         if self._ref_mean is None:
-            self._warmup.append(prob)
+            self._warmup.append(probability)
             if len(self._warmup) >= self.WARMUP:
                 self._ref_mean = sum(self._warmup) / len(self._warmup)
             return None
@@ -43,18 +44,21 @@ class PredictionMonitor:
         if len(self._recent) < self.WINDOW:
             return None
 
-        rm    = sum(self._recent) / len(self._recent)
-        shift = abs(rm - self._ref_mean)
-        sev   = (
-            "CRITICAL" if shift >= self.CRIT or adwin_drift else
-            "WARNING"  if shift >= self.WARN else
-            "INFO"
+        recent_mean = sum(self._recent) / len(self._recent)
+        shift = abs(recent_mean - self._ref_mean)
+        severity = (
+            "CRITICAL"
+            if shift >= self.CRIT or adwin_drift
+            else "WARNING"
+            if shift >= self.WARN
+            else "INFO"
         )
+
         return PredictionDriftReport(
-            timestamp=datetime.now(timezone.utc).isoformat(),  # ← fix
+            timestamp=datetime.now(UTC).isoformat(),
             drift_detected=adwin_drift,
             score_shift=round(shift, 5),
-            mean_score_recent=round(rm, 5),
+            mean_score_recent=round(recent_mean, 5),
             mean_score_reference=round(self._ref_mean, 5),
-            severity=sev,
+            severity=severity,
         )

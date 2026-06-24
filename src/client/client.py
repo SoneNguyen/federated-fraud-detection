@@ -1,5 +1,6 @@
 """Federated Learning Client Module"""
-from collections.abc import Sized
+from contextlib import nullcontext
+from collections.abc import Iterable, Sized
 from typing import cast
 import logging
 import os
@@ -9,8 +10,13 @@ from flwr.common import Scalar
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset, TensorDataset, WeightedRandomSampler
+from src.data.dataset import FraudDataset
 from src.model.fraud_mlp import FraudMLP, is_federated_param, federated_params
-from sklearn.metrics import average_precision_score, roc_auc_score, precision_recall_curve
+from src.client.metrics import (
+    average_precision_score_np,
+    precision_recall_curve_np,
+    roc_auc_score_np,
+)
 
 CLIENT_ID = int(os.environ.get("CLIENT_ID", "0"))
 
@@ -29,11 +35,11 @@ class FocalLoss(torch.nn.Module):
     """
     Focal loss for class-imbalanced binary classification.
 
-    gamma=2.0 (not 3.0) — lower gamma means less suppression of easy negatives,
+    gamma=2.0 lowers suppression of easy negatives,
     which is important in federated setting where each client sees fewer fraud
     samples per round. gamma=3.0 over-focuses and starves gradients early.
 
-    alpha=0.5 (reduced from 0.75) — less aggressive weighting of positive class,
+    alpha=0.5 applies less aggressive positive-class weighting,
     allowing natural data distribution to guide training better.
     """
     def __init__(self, alpha: float, gamma: float = 2.0):
@@ -63,6 +69,16 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _make_grad_scaler(enabled: bool):
+    return torch.amp.GradScaler("cuda", enabled=enabled)
+
+
+def _autocast_context(device: torch.device, enabled: bool):
+    if not enabled:
+        return nullcontext()
+    return torch.amp.autocast(device_type=device.type, enabled=enabled)
+
+
 def make_weighted_sampler(
     labels: np.ndarray,
     positive_multiplier: float = 5.0,
@@ -73,14 +89,14 @@ def make_weighted_sampler(
     Return a WeightedRandomSampler that oversamples the minority (fraud) class
     to improve gradient signal without over-distorting the training distribution.
 
-    Strategy: oversample positives by at most 2.5× their natural rate,
+    Strategy: oversample positives by at most 2.5x their natural rate,
     capped at 15% (less aggressive than before). This keeps the training
     distribution much closer to the real one, improving calibration.
     """
     n_neg = (labels == 0).sum()
     n_pos = (labels == 1).sum()
     if n_pos == 0:
-        # No fraud at all — return uniform sampler
+        # No fraud examples are available, so use uniform sampling.
         return WeightedRandomSampler(
             weights=np.ones(len(labels)).tolist(),
             num_samples=len(labels),
@@ -88,7 +104,7 @@ def make_weighted_sampler(
         )
 
     natural_rate = n_pos / len(labels)
-    # Target: oversample positives by at most 2.5× their natural rate,
+    # Target: oversample positives by at most 2.5x their natural rate,
     # capped at 15% (down from 30%).
     target_rate = min(natural_rate * positive_multiplier, positive_cap)
 
@@ -108,18 +124,19 @@ def labels_from_dataset(dataset) -> np.ndarray:
     if isinstance(dataset, Subset):
         base = dataset.dataset
         indices = torch.as_tensor(list(dataset.indices), dtype=torch.long)
-        if hasattr(base, "y"):
+        if isinstance(base, FraudDataset):
             return base.y[indices].detach().cpu().numpy().astype(int)
         if isinstance(base, TensorDataset) and len(base.tensors) >= 2:
             return base.tensors[1][indices].detach().cpu().numpy().astype(int)
 
-    if hasattr(dataset, "y"):
+    if isinstance(dataset, FraudDataset):
         return dataset.y.detach().cpu().numpy().astype(int)
 
     if isinstance(dataset, TensorDataset) and len(dataset.tensors) >= 2:
         return dataset.tensors[1].detach().cpu().numpy().astype(int)
 
-    return np.fromiter((float(y) for _, y in dataset), dtype=np.float32).astype(int)
+    iterable = cast(Iterable[tuple[torch.Tensor, torch.Tensor]], dataset)
+    return np.fromiter((float(y) for _, y in iterable), dtype=np.float32).astype(int)
 
 
 class FraudClient(NumPyClient):
@@ -135,7 +152,7 @@ class FraudClient(NumPyClient):
 
     def __init__(
         self,
-        model: torch.nn.Module,
+        model: FraudMLP,
         train_dataset,
         val_loader: DataLoader,
         local_epochs: int = 2,
@@ -210,7 +227,7 @@ class FraudClient(NumPyClient):
             sampler_positive_cap,
         )
 
-    # ── Flower interface ──────────────────────────────────────────────────────
+    # Flower interface
 
     def get_parameters(self, config: dict = {}) -> list[np.ndarray]:
         return federated_params(cast(FraudMLP, self.model))
@@ -254,7 +271,7 @@ class FraudClient(NumPyClient):
         optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=lr, weight_decay=weight_decay
         )
-        scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
+        scaler = _make_grad_scaler(self.use_amp)
         scheduler = self._make_local_scheduler(optimizer, lr, epochs)
 
         logger.info(
@@ -281,10 +298,7 @@ class FraudClient(NumPyClient):
                 X = X.to(self.model.device, non_blocking=self.pin_memory)
                 y = y.to(self.model.device, non_blocking=self.pin_memory)
                 optimizer.zero_grad(set_to_none=True)
-                with torch.amp.autocast(
-                    device_type=self.model.device.type,
-                    enabled=self.use_amp,
-                ):
+                with _autocast_context(self.model.device, self.use_amp):
                     loss = self._training_loss(self.model(X).squeeze(), y)
                 if fedprox_mu > 0:
                     prox = torch.zeros((), device=self.model.device)
@@ -372,10 +386,7 @@ class FraudClient(NumPyClient):
             for X, y in self.val_loader:
                 X = X.to(self.model.device, non_blocking=self.pin_memory)
                 y = y.to(self.model.device, non_blocking=self.pin_memory)
-                with torch.amp.autocast(
-                    device_type=self.model.device.type,
-                    enabled=self.use_amp,
-                ):
+                with _autocast_context(self.model.device, self.use_amp):
                     logits = self.model(X).squeeze()
                     focal_loss = self.focal_loss(logits, y)
                     bce_loss = self.bce_loss(logits, y.float())
@@ -398,9 +409,9 @@ class FraudClient(NumPyClient):
         y_prob   = np.concatenate(all_probs)   if all_probs   else np.array([], dtype=np.float32)
 
         if len(np.unique(y_true)) > 1:
-            auprc  = float(average_precision_score(y_true, y_prob))
-            auroc  = float(roc_auc_score(y_true, y_prob))
-            prec, rec, thresholds = precision_recall_curve(y_true, y_prob)
+            auprc = float(average_precision_score_np(y_true, y_prob))
+            auroc = float(roc_auc_score_np(y_true, y_prob))
+            prec, rec, thresholds = precision_recall_curve_np(y_true, y_prob)
             f1s    = 2 * prec * rec / (prec + rec + 1e-9)
             best_t = float(thresholds[f1s[:-1].argmax()]) if len(thresholds) else 0.5
             best_f1 = float(f1s.max())
@@ -432,7 +443,7 @@ class FraudClient(NumPyClient):
         )
         return float(avg_loss), total_examples, metrics
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
+    # Internal helpers
 
     def _make_local_scheduler(
         self,
@@ -482,10 +493,7 @@ class FraudClient(NumPyClient):
             for X, y in self.val_loader:
                 X = X.to(self.model.device, non_blocking=self.pin_memory)
                 y = y.to(self.model.device, non_blocking=self.pin_memory)
-                with torch.amp.autocast(
-                    device_type=self.model.device.type,
-                    enabled=self.use_amp,
-                ):
+                with _autocast_context(self.model.device, self.use_amp):
                     probs = torch.sigmoid(self.model(X).squeeze())
                 all_probs.append(probs.cpu().numpy())
                 all_targets.append(y.cpu().numpy())
@@ -494,12 +502,12 @@ class FraudClient(NumPyClient):
         y_prob = np.concatenate(all_probs)
         if len(np.unique(y_true)) < 2:
             return None
-        prec, rec, thresholds = precision_recall_curve(y_true, y_prob)
+        prec, rec, thresholds = precision_recall_curve_np(y_true, y_prob)
         f1s = 2 * prec * rec / (prec + rec + 1e-9)
         best_idx = int(f1s[:-1].argmax()) if len(thresholds) else 0
         return {
-            "auprc": float(average_precision_score(y_true, y_prob)),
-            "auroc": float(roc_auc_score(y_true, y_prob)),
+            "auprc": float(average_precision_score_np(y_true, y_prob)),
+            "auroc": float(roc_auc_score_np(y_true, y_prob)),
             "f1": float(f1s.max()),
             "threshold": float(thresholds[best_idx]) if len(thresholds) else 0.5,
         }

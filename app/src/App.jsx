@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CreditCard,
+  FolderOpen,
   Globe2,
   Landmark,
   Loader2,
@@ -149,6 +150,7 @@ function App() {
   const [loadingPrediction, setLoadingPrediction] = useState(false);
   const [message, setMessage] = useState(null);
   const [apiState, setApiState] = useState("checking");
+  const [runInfo, setRunInfo] = useState(null);
 
   const selectedModel = useMemo(
     () => models.find((model) => stripExt(model.checkpoint) === selected) || models.find((model) => model.selected),
@@ -191,11 +193,13 @@ function App() {
       ]);
       setHealth(healthData);
       setModels(modelData.models || []);
+      setRunInfo(modelData.run || healthData.run || null);
       setSelected(modelData.selected || healthData.model_version || "not_loaded");
       setApiState(healthData.model_version === "not_loaded" ? "no_model" : "online");
     } catch (error) {
       setHealth(null);
       setModels([]);
+      setRunInfo(null);
       setSelected("not_loaded");
       setApiState("offline");
       setMessage({ type: "error", text: error.message });
@@ -338,6 +342,7 @@ function App() {
 
       <section className="summary-band">
         <MetricTile label="Selected" value={selected || "not_loaded"} icon={Server} />
+        <MetricTile label="Run" value={runInfo?.run || "default"} icon={FolderOpen} />
         <MetricTile label="Threshold" value={formatNumber(health?.threshold ?? selectedModel?.threshold, 4)} icon={Activity} />
         <MetricTile label="Recommended" value={recommended?.checkpoint || "None"} icon={ShieldCheck} />
       </section>

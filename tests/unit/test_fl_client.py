@@ -1,6 +1,5 @@
-# This module contains unit tests for the FraudClient class in the client.fl_client module.
-# The tests verify that the get_parameters and set_parameters methods work correctly, that the fit method returns the correct number of examples,
-# and that the evaluate method returns a loss value and the correct number of evaluation examples.
+"""Unit tests for the federated fraud client."""
+
 import unittest
 
 import torch
@@ -12,13 +11,12 @@ from src.model.fraud_mlp import FraudMLP
 
 
 class TestFraudClient(unittest.TestCase):
-
     def setUp(self):
         self.model = FraudMLP()
 
         first_layer = self.model.input_proj
         assert isinstance(first_layer, nn.Linear), "Expected first layer to be nn.Linear"
-        in_features: int = first_layer.in_features  # ← now typed as int, not Module
+        in_features: int = first_layer.in_features
 
         x = torch.randn(10, in_features)
         y = torch.randint(0, 2, (10,), dtype=torch.float32)
@@ -36,26 +34,27 @@ class TestFraudClient(unittest.TestCase):
         updated = self.client.get_parameters()
         self.assertTrue(
             any(
-                not torch.allclose(torch.from_numpy(u), torch.from_numpy(p))
-                for u, p in zip(updated, params)
+                not torch.allclose(torch.from_numpy(updated_param), torch.from_numpy(param))
+                for updated_param, param in zip(updated, params)
             )
         )
 
     def test_fit_and_evaluate_return_counts(self):
         params = self.client.get_parameters()
         dataset = self.loader.dataset
-        assert isinstance(dataset, TensorDataset)          # ← narrows to Sized subtype
-        n = len(dataset)
+        assert isinstance(dataset, TensorDataset)
+        num_examples = len(dataset)
 
-        updated_params, num_examples, fit_metrics = self.client.fit(
+        updated_params, fit_examples, fit_metrics = self.client.fit(
             params, {"lr": 0.01, "focal_alpha": 0.8}
         )
-        self.assertEqual(num_examples, n)
+
+        self.assertEqual(fit_examples, num_examples)
         self.assertEqual(self.client.focal_loss.alpha, 0.8)
         self.assertIn("client_id", fit_metrics)
 
         loss, eval_examples, _ = self.client.evaluate(updated_params, {})
-        self.assertEqual(eval_examples, n)
+        self.assertEqual(eval_examples, num_examples)
         self.assertIsInstance(loss, float)
 
     def test_focal_loss_alpha_weights_positive_and_negative_classes(self):

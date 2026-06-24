@@ -5,19 +5,26 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Optional, cast
 
 import mlflow
 import numpy as np
 import torch
-from flwr.common import FitIns, Scalar, ndarrays_to_parameters, parameters_to_ndarrays
+from flwr.common import EvaluateIns, FitIns, Scalar, ndarrays_to_parameters, parameters_to_ndarrays
 from flwr.server.strategy import FedAvg
 
 from src.model.fraud_mlp import FraudMLP, is_federated_param
+from src.server.aggregation import (
+    robust_blended_average_ndarrays,
+    stabilize_aggregate_update,
+    target_aware_fedavg_weights,
+    target_score,
+)
 from src.server.checkpoint_manager import CheckpointManager
 from src.server.client_state import alpha_for_client, client_auprc_history, record_auprc
+from src.server.training_schedule import adapt_client_fit_config
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -44,6 +51,7 @@ class WeightedFedAvg(FedAvg):
         super().__init__(**kwargs)
 
         self.ckpt = checkpoint_manager or CheckpointManager("outputs/checkpoints")
+        self.results_dir = Path(os.environ.get("RESULTS_DIR", "results"))
         self.best_target_score = 0.0
         self.best_auprc = 0.0
         self.best_f1 = 0.0
@@ -58,21 +66,139 @@ class WeightedFedAvg(FedAvg):
         self.selection_loss_weight = float(os.environ.get("SELECTION_LOSS_WEIGHT", "1.5"))
         self.stall_window = int(os.environ.get("STALL_WINDOW", "5"))
         self.fairness_weight = float(os.environ.get("FAIRNESS_AGG_WEIGHT", "0.15"))
+        self.previous_aggregate: list[np.ndarray] | None = None
+        configured_clients = int(os.environ.get("NUM_CLIENTS", "3"))
+        self.configured_clients = configured_clients
+        default_server_lr = "0.65" if configured_clients >= 50 else "1.0"
+        default_update_ratio = "0.035" if configured_clients >= 50 else "0.10"
+        self.server_lr = float(os.environ.get("SERVER_AGG_LR", default_server_lr))
+        self.current_server_lr = self.server_lr
+        self.current_schedule_meta: dict[str, float | str] = {"adaptive_phase": "warmup"}
+        self.max_update_ratio = float(os.environ.get("SERVER_MAX_UPDATE_RATIO", default_update_ratio))
+        default_trim = "0.10" if configured_clients >= 50 else "0.0"
+        default_blend = "0.25" if configured_clients >= 50 else ("0.10" if configured_clients >= 10 else "0.0")
+        self.robust_trim_ratio = float(os.environ.get("ROBUST_TRIM_RATIO", default_trim))
+        self.robust_median_blend = float(os.environ.get("ROBUST_MEDIAN_BLEND", default_blend))
+        self.adaptive_schedule = os.environ.get("ADAPTIVE_SCHEDULE", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.coverage_sampling = os.environ.get(
+            "COVERAGE_SAMPLING",
+            "1" if configured_clients >= 50 else "0",
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.fit_sample_counts: dict[str, int] = {}
+        self.eval_sample_counts: dict[str, int] = {}
 
     def configure_fit(self, server_round, parameters, client_manager):
         """Inject per-client focal alpha into each client's fit config."""
-        fit_instructions = super().configure_fit(server_round, parameters, client_manager)
+        config = {}
+        if self.on_fit_config_fn is not None:
+            config = self.on_fit_config_fn(server_round)
+        config, self.current_server_lr, self.current_schedule_meta = adapt_client_fit_config(
+            config,
+            self.history,
+            server_round=server_round,
+            base_server_lr=self.server_lr,
+            best_target_score=self.best_target_score,
+            configured_clients=self.configured_clients,
+            stall_window=self.stall_window,
+            enabled=self.adaptive_schedule,
+        )
+        fit_ins = FitIns(parameters, config)
+        sample_size, min_num_clients = self.num_fit_clients(client_manager.num_available())
+        clients = self._sample_clients(
+            client_manager=client_manager,
+            sample_size=sample_size,
+            min_num_clients=min_num_clients,
+            counts=self.fit_sample_counts,
+            label="fit",
+            server_round=server_round,
+        )
+        fit_instructions = [(client, fit_ins) for client in clients]
 
         patched = []
         alphas = []
-        for client_id, (client_proxy, fit_ins) in enumerate(fit_instructions):
+        for fallback_id, (client_proxy, fit_ins) in enumerate(fit_instructions):
+            client_id = self._client_numeric_id(client_proxy, fallback_id)
             alpha = alpha_for_client(client_id)
             new_config = dict(fit_ins.config)
             new_config["focal_alpha"] = alpha
             alphas.append(f"{client_id}:{alpha:.2f}")
             patched.append((client_proxy, FitIns(fit_ins.parameters, new_config)))
-        logger.info("R%03d cfg alpha=%s", server_round, ",".join(alphas))
+        logger.info(
+            "R%03d cfg phase=%s lr=%.1e ep=%s slr=%.2f alpha=%s",
+            server_round,
+            config.get("adaptive_phase", "base"),
+            float(config.get("lr", 0.0)),
+            int(config.get("local_epochs", 0)),
+            self.current_server_lr,
+            ",".join(alphas),
+        )
         return patched
+
+    def configure_evaluate(self, server_round, parameters, client_manager):
+        if self.fraction_evaluate == 0.0:
+            return []
+        config = {}
+        if self.on_evaluate_config_fn is not None:
+            config = self.on_evaluate_config_fn(server_round)
+        evaluate_ins = EvaluateIns(parameters, config)
+        sample_size, min_num_clients = self.num_evaluation_clients(client_manager.num_available())
+        clients = self._sample_clients(
+            client_manager=client_manager,
+            sample_size=sample_size,
+            min_num_clients=min_num_clients,
+            counts=self.eval_sample_counts,
+            label="eval",
+            server_round=server_round,
+        )
+        return [(client, evaluate_ins) for client in clients]
+
+    def _sample_clients(
+        self,
+        *,
+        client_manager,
+        sample_size: int,
+        min_num_clients: int,
+        counts: dict[str, int],
+        label: str,
+        server_round: int,
+    ):
+        if not self.coverage_sampling or not hasattr(client_manager, "clients"):
+            clients = client_manager.sample(
+                num_clients=sample_size,
+                min_num_clients=min_num_clients,
+            )
+        else:
+            if hasattr(client_manager, "wait_for"):
+                client_manager.wait_for(min_num_clients)
+            available = list(getattr(client_manager, "clients").values())
+            available.sort(key=lambda client: (counts.get(str(client.cid), 0), str(client.cid)))
+            clients = available[:sample_size]
+        for client in clients:
+            cid = str(getattr(client, "cid", "unknown"))
+            counts[cid] = counts.get(cid, 0) + 1
+        if self.coverage_sampling:
+            selected = ",".join(str(getattr(client, "cid", "?")) for client in clients[:8])
+            logger.info(
+                "R%03d %s_sample size=%s unique=%s first=%s",
+                server_round,
+                label,
+                len(clients),
+                len(counts),
+                selected,
+            )
+        return clients
+
+    def _client_numeric_id(self, client_proxy, fallback_id: int) -> int:
+        cid = str(getattr(client_proxy, "cid", ""))
+        if cid.isdigit():
+            return int(cid)
+        digits = "".join(ch for ch in cid if ch.isdigit())
+        return int(digits) if digits else fallback_id
 
     def aggregate_fit(self, server_round, results, failures):
         if failures:
@@ -89,39 +215,46 @@ class WeightedFedAvg(FedAvg):
 
         self.latest_fit_summary = self._aggregate_fit_metrics(results)
 
-        weights: list[float] = []
-        for _, fit_res in results:
-            metrics = getattr(fit_res, "metrics", None) or {}
-            auprc = float(metrics.get("val_auprc", 0.0))
-            auroc = float(metrics.get("val_auroc", 0.0))
-            f1 = float(metrics.get("val_f1", 0.0))
-            target_score = self._target_score(
-                {"val_auprc": auprc, "val_auroc": auroc, "val_f1": f1}
-            )
-            if os.environ.get("TRAINING_PROFILE", "ambitious").strip().lower() == "ambitious":
-                quality = 1.0 + self.fairness_weight * (1.0 - min(max(target_score, 0.0), 1.0))
-            else:
-                quality = 0.80 + 0.20 * min(max(target_score, 0.0), 1.0)
-            weights.append(quality * (fit_res.num_examples ** 0.5))
-
-        total_w = sum(weights) or 1.0
-        norm_weights = [w / total_w for w in weights]
+        result_metrics = [getattr(fit_res, "metrics", None) or {} for _, fit_res in results]
+        result_examples = [int(fit_res.num_examples) for _, fit_res in results]
+        norm_weights = target_aware_fedavg_weights(
+            client_metrics=result_metrics,
+            client_examples=result_examples,
+            target_auprc=self.target_auprc,
+            target_auroc=self.target_auroc,
+            target_f1=self.target_f1,
+            fairness_weight=self.fairness_weight,
+            profile=os.environ.get("TRAINING_PROFILE", "ambitious"),
+        )
         total_samples = sum(r.num_examples for _, r in results)
         weight_text = ",".join(f"{w:.3f}" for w in norm_weights)
 
-        weighted: list[list[np.ndarray]] = []
-        client_payloads: list[tuple[int, list[np.ndarray], dict]] = []
-        for idx, (w, (_, fit_res)) in enumerate(zip(norm_weights, results)):
+        client_parameters: list[list[np.ndarray]] = []
+        for _, fit_res in results:
             params = parameters_to_ndarrays(fit_res.parameters)
-            metrics = getattr(fit_res, "metrics", None) or {}
-            cid = int(metrics.get("client_id", idx))
-            client_payloads.append((cid, params, metrics))
-            weighted.append([p * w for p in params])
+            client_parameters.append(params)
 
-        agg: list[np.ndarray] = [
-            sum((w[i] for w in weighted), np.zeros_like(weighted[0][i]))
-            for i in range(len(weighted[0]))
-        ]
+        proposed_agg, robust_meta = robust_blended_average_ndarrays(
+            client_parameters,
+            norm_weights,
+            trim_ratio=self.robust_trim_ratio,
+            median_blend=self.robust_median_blend,
+        )
+        agg, stability = stabilize_aggregate_update(
+            previous=self.previous_aggregate,
+            proposed=proposed_agg,
+            server_lr=self.current_server_lr,
+            max_update_ratio=self.max_update_ratio,
+        )
+        stability.update(robust_meta)
+        stability.update(
+            {
+                key: value
+                for key, value in self.current_schedule_meta.items()
+                if isinstance(value, (int, float))
+            }
+        )
+        self.previous_aggregate = [np.array(param, copy=True) for param in agg]
 
         full_state = self._state_from_ndarrays(agg)
 
@@ -133,27 +266,11 @@ class WeightedFedAvg(FedAvg):
                 "num_clients": len(results),
                 "total_samples": total_samples,
                 "aggregation_weights": norm_weights,
+                "aggregation_stability": stability,
+                "schedule": self.current_schedule_meta,
             },
         )
         self.latest_aggregate_path = path
-
-        for cid, params, metrics in client_payloads:
-            client_state = self._state_from_ndarrays(params)
-            self.ckpt.save(
-                name=f"client_{cid}_round_{server_round:03d}",
-                state_dict=client_state,
-                metadata={
-                    "round": server_round,
-                    "client_id": cid,
-                    "num_clients": len(results),
-                    "source": "post_fit_client_update",
-                    **{
-                        k: float(v)
-                        for k, v in metrics.items()
-                        if isinstance(v, (int, float))
-                    },
-                },
-            )
 
         removed = self.ckpt.prune_round_checkpoints(self.keep_last_rounds)
         fit_train = self.latest_fit_summary.get("fit_train_loss", 0.0)
@@ -161,13 +278,18 @@ class WeightedFedAvg(FedAvg):
         fit_grad = self.latest_fit_summary.get("fit_grad_norm_mean", 0.0)
         logger.info(
             "R%03d fit clients=%s samples=%s train=%.6f delta=%+.6f "
-            "grad=%.3f w=%s ckpt=%s pruned=%s",
+            "grad=%.3f upd=%.3e scale=%.3f slr=%.2f robust=%.2f phase=%s w=%s ckpt=%s pruned=%s",
             server_round,
             len(results),
             total_samples,
             fit_train,
             fit_delta,
             fit_grad,
+            stability["server_update_norm"],
+            stability["server_update_scale"],
+            stability["server_lr"],
+            stability.get("robust_median_blend", 0.0),
+            self.current_schedule_meta.get("adaptive_phase", "base"),
             weight_text,
             path.name,
             removed,
@@ -175,6 +297,8 @@ class WeightedFedAvg(FedAvg):
 
         mlflow.log_metric("clients", len(results), step=server_round)
         mlflow.log_metric("total_samples", total_samples, step=server_round)
+        for name, value in stability.items():
+            mlflow.log_metric(name, value, step=server_round)
         return ndarrays_to_parameters(cast(list[np.ndarray], agg)), {}
 
     def aggregate_evaluate(self, server_round: int, results, failures) -> tuple[float | None, dict[str, Scalar]]:
@@ -203,23 +327,27 @@ class WeightedFedAvg(FedAvg):
             self._record_client_eval(cid, eval_res.num_examples, eval_res.loss, metrics)
 
         avg_loss = weighted_loss / max(total, 1)
-        aggregated_metrics = {name: value / total for name, value in metric_sum.items()}
+        aggregated_metrics: dict[str, object] = {
+            name: value / total for name, value in metric_sum.items()
+        }
         aggregated_metrics["val_loss"] = float(avg_loss)
         aggregated_metrics.update(self._client_eval_summary())
         aggregated_metrics.update(self.latest_fit_summary)
 
-        status = self._target_status(aggregated_metrics)
+        numeric_metrics = self._numeric_record(aggregated_metrics)
+        status = self._target_status(numeric_metrics)
         aggregated_metrics.update(status)
-        high_status = self._high_target_status(aggregated_metrics)
+        numeric_metrics = self._numeric_record(aggregated_metrics)
+        high_status = self._high_target_status(numeric_metrics)
         aggregated_metrics.update(high_status)
         diagnostics = self._learning_diagnostics(server_round, aggregated_metrics)
         aggregated_metrics.update(diagnostics)
 
         target_score = float(status["target_score"])
-        learning_score = float(aggregated_metrics.get("learning_score", target_score))
-        global_auprc = float(aggregated_metrics.get("val_auprc", 0.0))
-        global_f1 = float(aggregated_metrics.get("val_f1", 0.0))
-        val_loss = float(aggregated_metrics.get("val_loss", float("inf")))
+        learning_score = self._metric_float(aggregated_metrics, "learning_score", target_score)
+        global_auprc = self._metric_float(aggregated_metrics, "val_auprc")
+        global_f1 = self._metric_float(aggregated_metrics, "val_f1")
+        val_loss = self._metric_float(aggregated_metrics, "val_loss", float("inf"))
 
         if target_score > self.best_target_score + 0.001:
             self.best_target_score = target_score
@@ -231,7 +359,6 @@ class WeightedFedAvg(FedAvg):
             self.best_f1 = max(self.best_f1, global_f1)
             self.best_round = server_round
             self.patience_counter = 0
-            self._copy_latest_checkpoint(f"best_target_round_{server_round:03d}.pt")
             self._persist_best_summary(server_round, total, aggregated_metrics)
             logger.info(
                 "R%03d best learn=%.4f target=%.4f loss=%.6f auprc=%.4f auroc=%.4f f1=%.4f",
@@ -255,21 +382,16 @@ class WeightedFedAvg(FedAvg):
                 )
 
         if bool(status["target_met"]):
-            self._copy_latest_checkpoint(f"target_met_round_{server_round:03d}.pt")
             if val_loss < self.best_loss - 1e-4:
                 self.best_loss = val_loss
                 self.best_loss_round = server_round
-                self._copy_latest_checkpoint(f"best_low_loss_target_round_{server_round:03d}.pt")
                 logger.info(
                     "R%03d best_loss=%.6f",
                     server_round,
                     val_loss,
                 )
         if bool(aggregated_metrics.get("high_target_met", False)):
-            self._copy_latest_checkpoint(f"high_target_round_{server_round:03d}.pt")
             logger.info("R%03d high_target=1", server_round)
-        if bool(aggregated_metrics.get("client_floor_met", False)):
-            self._copy_latest_checkpoint(f"client_floor_round_{server_round:03d}.pt")
 
         for name, value in aggregated_metrics.items():
             if isinstance(value, (int, float, bool)):
@@ -302,14 +424,17 @@ class WeightedFedAvg(FedAvg):
         self.history.append(self._numeric_record(aggregated_metrics))
         return float(avg_loss), cast(dict[str, Scalar], aggregated_metrics)
 
-    def _target_score(self, metrics: dict[str, float]) -> float:
-        auprc_ratio = float(metrics.get("val_auprc", 0.0)) / self.target_auprc
-        auroc_ratio = float(metrics.get("val_auroc", 0.0)) / self.target_auroc
-        f1_ratio = float(metrics.get("val_f1", 0.0)) / self.target_f1
-        capped = [min(auprc_ratio, 1.0), min(auroc_ratio, 1.0), min(f1_ratio, 1.0)]
-        return float(0.35 * capped[0] + 0.20 * capped[1] + 0.45 * capped[2])
+    def _target_score(self, metrics: Mapping[str, float]) -> float:
+        return target_score(
+            auprc=float(metrics.get("val_auprc", 0.0)),
+            auroc=float(metrics.get("val_auroc", 0.0)),
+            f1=float(metrics.get("val_f1", 0.0)),
+            target_auprc=self.target_auprc,
+            target_auroc=self.target_auroc,
+            target_f1=self.target_f1,
+        )
 
-    def _target_status(self, metrics: dict[str, float]) -> dict[str, float | bool]:
+    def _target_status(self, metrics: Mapping[str, float]) -> dict[str, float | bool]:
         auprc = float(metrics.get("val_auprc", 0.0))
         auroc = float(metrics.get("val_auroc", 0.0))
         f1 = float(metrics.get("val_f1", 0.0))
@@ -328,7 +453,7 @@ class WeightedFedAvg(FedAvg):
             "gap_f1": max(self.target_f1 - f1, 0.0),
         }
 
-    def _high_target_status(self, metrics: dict[str, float | bool]) -> dict[str, float | bool]:
+    def _high_target_status(self, metrics: Mapping[str, float]) -> dict[str, float | bool]:
         auprc = float(metrics.get("val_auprc", 0.0))
         auroc = float(metrics.get("val_auroc", 0.0))
         f1 = float(metrics.get("val_f1", 0.0))
@@ -372,8 +497,8 @@ class WeightedFedAvg(FedAvg):
             "gap_client_f1": max(self.client_floor_f1 - min_f1, 0.0),
         }
 
-    def _learning_score(self, metrics: dict[str, float | bool]) -> float:
-        target_score = float(metrics.get("target_score", self._target_score(cast(dict[str, float], metrics))))
+    def _learning_score(self, metrics: Mapping[str, float]) -> float:
+        target_score = float(metrics.get("target_score", self._target_score(metrics)))
         if not bool(metrics.get("target_met", False)):
             return target_score
 
@@ -390,10 +515,10 @@ class WeightedFedAvg(FedAvg):
     def _learning_diagnostics(
         self,
         server_round: int,
-        metrics: dict[str, float | bool],
+        metrics: Mapping[str, object],
     ) -> dict[str, float | str]:
-        learning_score = self._learning_score(metrics)
         numeric_current = self._numeric_record(metrics)
+        learning_score = self._learning_score(numeric_current)
         history = [*self.history, numeric_current]
         loss_slope = self._slope(history, "val_loss", self.stall_window)
         f1_slope = self._slope(history, "val_f1", self.stall_window)
@@ -413,7 +538,7 @@ class WeightedFedAvg(FedAvg):
         else:
             state = "mixed"
 
-        val_loss = float(metrics.get("val_loss", float("inf")))
+        val_loss = float(numeric_current.get("val_loss", float("inf")))
         best_loss = min(self.best_loss, val_loss)
         best_loss_round = (
             server_round
@@ -509,12 +634,23 @@ class WeightedFedAvg(FedAvg):
             for name in sorted(totals)
         }
 
-    def _numeric_record(self, metrics: dict[str, object]) -> dict[str, float]:
+    def _numeric_record(self, metrics: Mapping[str, object]) -> dict[str, float]:
         return {
             name: float(value)
             for name, value in metrics.items()
             if isinstance(value, (int, float, bool))
         }
+
+    def _metric_float(
+        self,
+        metrics: Mapping[str, object],
+        name: str,
+        default: float = 0.0,
+    ) -> float:
+        value = metrics.get(name, default)
+        if isinstance(value, (int, float, bool)):
+            return float(value)
+        return default
 
     def _slope(
         self,
@@ -531,11 +667,6 @@ class WeightedFedAvg(FedAvg):
             return 0.0
         return float((values[-1] - values[0]) / (len(values) - 1))
 
-    def _copy_latest_checkpoint(self, filename: str) -> None:
-        latest = self.latest_aggregate_path or self.ckpt.latest()
-        if latest:
-            shutil.copy2(latest, self.ckpt.checkpoint_dir / filename)
-
     def _state_from_ndarrays(self, ndarrays: list[np.ndarray]) -> dict[str, torch.Tensor]:
         model = FraudMLP()
         full_state = model.state_dict()
@@ -545,9 +676,9 @@ class WeightedFedAvg(FedAvg):
         return full_state
 
     def _persist_evaluation_summary(
-        self, server_round: int, total_examples: int, metrics: dict[str, float | bool]
+        self, server_round: int, total_examples: int, metrics: Mapping[str, object]
     ) -> None:
-        output_dir = Path("results")
+        output_dir = self.results_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         history_path = output_dir / "evaluation_history.json"
         record = {
@@ -566,17 +697,79 @@ class WeightedFedAvg(FedAvg):
 
         latest_path = output_dir / "latest_metrics.json"
         latest_path.write_text(json.dumps(record, indent=2))
+        self._persist_training_summary(history)
 
     def _persist_best_summary(
-        self, server_round: int, total_examples: int, metrics: dict[str, float | bool]
+        self, server_round: int, total_examples: int, metrics: Mapping[str, object]
     ) -> None:
-        output_dir = Path("results")
+        output_dir = self.results_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         best_path = output_dir / "best_round.json"
         record = {
             "round": server_round,
-            "checkpoint": f"best_target_round_{server_round:03d}.pt",
+            "checkpoint": f"round_{server_round:03d}.pt",
             "total_examples": total_examples,
             **metrics,
         }
         best_path.write_text(json.dumps(record, indent=2))
+
+    def _persist_training_summary(self, history: list[dict]) -> None:
+        output_dir = self.results_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        rows = [row for row in history if isinstance(row, dict)]
+        ranked = sorted(
+            rows,
+            key=lambda row: (
+                bool(row.get("target_met", False)),
+                float(row.get("learning_score", 0.0) or 0.0),
+                float(row.get("val_auprc", 0.0) or 0.0),
+                float(row.get("val_f1", 0.0) or 0.0),
+            ),
+            reverse=True,
+        )
+        latest = rows[-1] if rows else {}
+        best = ranked[0] if ranked else {}
+        lines = [
+            "# Training Summary",
+            "",
+            "| Item | Round | Checkpoint | Loss | AUPRC | AUROC | F1 | Target | High | Floor |",
+            "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        for label, row in (("Latest", latest), ("Best", best)):
+            if not row:
+                continue
+            round_no = int(float(row.get("round", 0)))
+            lines.append(
+                "| {label} | {round_no} | round_{round_no:03d}.pt | {loss:.6f} | {auprc:.4f} | {auroc:.4f} | {f1:.4f} | {target} | {high} | {floor} |".format(
+                    label=label,
+                    round_no=round_no,
+                    loss=float(row.get("val_loss", 0.0) or 0.0),
+                    auprc=float(row.get("val_auprc", 0.0) or 0.0),
+                    auroc=float(row.get("val_auroc", 0.0) or 0.0),
+                    f1=float(row.get("val_f1", 0.0) or 0.0),
+                    target=int(bool(row.get("target_met", False))),
+                    high=int(bool(row.get("high_target_met", False))),
+                    floor=int(bool(row.get("client_floor_met", False))),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "| Round | Checkpoint | Loss | AUPRC | AUROC | F1 | Learning | State |",
+                "|---:|---|---:|---:|---:|---:|---:|---|",
+            ]
+        )
+        for row in ranked[:10]:
+            round_no = int(float(row.get("round", 0)))
+            lines.append(
+                "| {round_no} | round_{round_no:03d}.pt | {loss:.6f} | {auprc:.4f} | {auroc:.4f} | {f1:.4f} | {learn:.4f} | {state} |".format(
+                    round_no=round_no,
+                    loss=float(row.get("val_loss", 0.0) or 0.0),
+                    auprc=float(row.get("val_auprc", 0.0) or 0.0),
+                    auroc=float(row.get("val_auroc", 0.0) or 0.0),
+                    f1=float(row.get("val_f1", 0.0) or 0.0),
+                    learn=float(row.get("learning_score", 0.0) or 0.0),
+                    state=str(row.get("learning_state", "")),
+                )
+            )
+        (output_dir / "training_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

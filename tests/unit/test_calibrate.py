@@ -77,7 +77,7 @@ def test_apply_calibration(tmp_path):
     }
     calib_path = tmp_path / "calibration_params.json"
     calib_path.write_text(json.dumps(calib))
-    # sigmoid(1.0 * 0.5 + 0.0) = sigmoid(0.5) ≈ 0.622
+    # sigmoid(1.0 * 0.5 + 0.0) is about 0.622.
     result = apply_calibration(0.5, calib_path=str(calib_path))
     assert abs(result - 0.622) < 0.01
 

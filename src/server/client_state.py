@@ -23,8 +23,8 @@ def alpha_for_client(client_id: int) -> float:
     - If the client has no history yet, return the neutral default (0.75).
     - If the client's recent mean AUPRC is below 0.50 (clearly struggling),
       raise alpha toward 0.85 to increase positive-class weight.
-    - If between 0.50–0.58 (below the good-client band), nudge to 0.80.
-    - Otherwise leave at 0.75 — don't over-correct healthy clients.
+    - If between 0.50 and 0.58, nudge to 0.80.
+    - Otherwise leave at 0.75 to avoid over-correcting healthy clients.
     """
     history = client_auprc_history.get(client_id)
     if not history:

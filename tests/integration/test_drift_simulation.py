@@ -1,39 +1,45 @@
-# tests/integration/test_drift_simulation.py
-import pandas as pd, numpy as np
-from drift.detectors import FeatureMonitor, NUMERIC
+import numpy as np
+import pandas as pd
 
-def make_df(n=10_000, shift=0.0, seed=0):
+from drift.detectors import NUMERIC, FeatureMonitor
+
+
+def make_df(n: int = 10_000, shift: float = 0.0, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({c: rng.normal(shift, 1.0, n) for c in NUMERIC})
+    return pd.DataFrame({feature: rng.normal(shift, 1.0, n) for feature in NUMERIC})
 
-def make_stale_df(n=10_000, stale_frac=0.8, seed=5):
+
+def make_stale_df(n: int = 10_000, stale_frac: float = 0.8, seed: int = 5) -> pd.DataFrame:
     df = make_df(n=n, seed=seed)
-    # Add stale_fx_flag metadata column — 80% stale
     rng = np.random.default_rng(seed)
     df["stale_fx_flag"] = (rng.random(n) < stale_frac).astype(int)
     return df
 
-ref = make_df(seed=0)
-monitor = FeatureMonitor(ref)
 
-# Test 1: no drift → INFO
-r = monitor.check(make_df(seed=99))
-assert r.severity=="INFO", f"Expected INFO: {r.severity}"
-assert r.stale_fx_rate == 0.0
-print(f"PASS no-drift: {r.severity}, stale_fx_rate={r.stale_fx_rate}")
+def test_feature_monitor_reports_info_without_distribution_shift(tmp_path):
+    monitor = FeatureMonitor(make_df(seed=0), persist_path=tmp_path / "reference.parquet")
 
-# Test 2: severe drift on tx_amount_usd (v3 name) → CRITICAL
-severe = make_df(seed=2)
-severe["tx_amount_usd"]     = np.random.default_rng(2).normal(-3.0,0.5,10_000)
-severe["tx_volume_1h_usd"]  = np.random.default_rng(3).normal(4.0,0.5,10_000)
-r = monitor.check(severe)
-assert r.severity=="CRITICAL"
-assert "tx_amount_usd" in r.triggered_features
-print(f"PASS severe drift: {r.severity}, triggered={r.triggered_features}")
+    report = monitor.check(make_df(seed=99))
 
-# Test 3: stale FX rate escalation (v3 new)
-stale_df = make_stale_df(stale_frac=0.8)
-r = monitor.check(stale_df)
-assert r.stale_fx_rate > 0.7, f"stale_fx_rate too low: {r.stale_fx_rate}"
-print(f"PASS stale FX: stale_fx_rate={r.stale_fx_rate:.2f}")
-print("All v3 drift simulation tests PASSED")
+    assert report.severity == "INFO"
+    assert report.stale_fx_rate == 0.0
+
+
+def test_feature_monitor_reports_critical_for_severe_shift(tmp_path):
+    monitor = FeatureMonitor(make_df(seed=0), persist_path=tmp_path / "reference.parquet")
+    severe = make_df(seed=2)
+    severe["tx_amount_usd"] = np.random.default_rng(2).normal(-3.0, 0.5, 10_000)
+    severe["tx_volume_1h_usd"] = np.random.default_rng(3).normal(4.0, 0.5, 10_000)
+
+    report = monitor.check(severe)
+
+    assert report.severity == "CRITICAL"
+    assert "tx_amount_usd" in report.triggered_features
+
+
+def test_feature_monitor_reports_stale_fx_rate(tmp_path):
+    monitor = FeatureMonitor(make_df(seed=0), persist_path=tmp_path / "reference.parquet")
+
+    report = monitor.check(make_stale_df(stale_frac=0.8))
+
+    assert report.stale_fx_rate > 0.7

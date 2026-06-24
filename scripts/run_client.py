@@ -1,96 +1,73 @@
-"""Entry point for federated learning client."""
+"""Start one Flower SuperNode for the configured client partition."""
 
-import logging
+from __future__ import annotations
+
+import argparse
 import os
-
-import torch
-
-from flwr.client import start_client
-from torch.utils.data import DataLoader
-
-from src.model.fraud_mlp import FraudMLP
-from src.client.client import FraudClient
-from src.data.dataset import loader_kwargs, split_dataset
-
-logging.getLogger("flwr").setLevel(logging.ERROR)
+import subprocess
+from pathlib import Path
 
 
-def main():
-    """Start a federated learning client."""
-    cid = int(os.environ["CLIENT_ID"])
-    addr = os.environ.get("SERVER_ADDRESS", "localhost:8080")
-    path = os.environ["DATA_PATH"]
-    epochs = int(os.environ.get("LOCAL_EPOCHS", "2"))
-    device_str = os.environ.get("DEVICE", None)  # None = auto-detect
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Start one Flower SuperNode.")
+    parser.add_argument("--client-id", type=int, default=int(os.environ.get("CLIENT_ID", "0")))
+    parser.add_argument(
+        "--data-path",
+        default=os.environ.get("DATA_PATH", ""),
+        help="Client parquet path. Defaults to dataset/processed/client_<id>/transactions_normalized.parquet.",
+    )
+    parser.add_argument(
+        "--superlink",
+        default=os.environ.get("FLOWER_SUPERLINK", "127.0.0.1:9092"),
+    )
+    parser.add_argument("--device", default=os.environ.get("DEVICE", "auto"))
+    parser.add_argument("--local-epochs", type=int, default=int(os.environ.get("LOCAL_EPOCHS", "2")))
+    parser.add_argument("--batch-size", type=int, default=int(os.environ.get("BATCH_SIZE", "512")))
+    parser.add_argument(
+        "--clientappio-port",
+        type=int,
+        default=0,
+        help="0 picks 9094 + client id for local multi-node runs.",
+    )
+    parser.add_argument("--secure", action="store_true", help="Do not pass --insecure.")
+    return parser.parse_args()
 
-    if device_str:
-        device = torch.device(device_str)
-    else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if device.type == "cuda":
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-        torch.set_float32_matmul_precision(os.environ.get("MATMUL_PRECISION", "high"))
+def main() -> None:
+    args = parse_args()
+    data_path = Path(args.data_path) if args.data_path else (
+        Path("dataset/processed") / f"client_{args.client_id}" / "transactions_normalized.parquet"
+    )
+    if not data_path.exists():
+        raise FileNotFoundError(f"Client data not found: {data_path}")
 
-    batch_size = int(os.environ.get(
-        "BATCH_SIZE",
-        "2048" if device.type == "cuda" else "512",
-    ))
-    num_workers = int(os.environ.get(
-        "NUM_WORKERS",
-        "0" if os.name == "nt" else "2",
-    ))
-    prefetch_factor = int(os.environ.get("PREFETCH_FACTOR", "4"))
-    use_amp = os.environ.get("USE_AMP", "1" if device.type == "cuda" else "0")
-    loss_mode = os.environ.get("LOSS_MODE", "hybrid")
-    bce_mix = os.environ.get("BCE_MIX", "0.30")
+    appio_port = args.clientappio_port or (9094 + args.client_id)
+    node_config = (
+        f"client-id={args.client_id} "
+        f"partition-id={args.client_id} "
+        f'data-path="{data_path.as_posix()}" '
+        f'device="{args.device}" '
+        f"local-epochs={args.local_epochs} "
+        f"batch-size={args.batch_size}"
+    )
+    cmd = [
+        "flower-supernode",
+        "--superlink",
+        args.superlink,
+        "--clientappio-api-address",
+        f"127.0.0.1:{appio_port}",
+        "--node-config",
+        node_config,
+    ]
+    if not args.secure:
+        cmd.append("--insecure")
 
-    gpu = ""
-    if device.type == "cuda":
-        props = torch.cuda.get_device_properties(device)
-        gpu = f" gpu=\"{props.name}\" mem={props.total_memory / 1024**3:.1f}GiB"
     print(
-        f"CLIENT start id={cid} addr={addr} data={path} device={device}{gpu} "
-        f"bs={batch_size} workers={num_workers} amp={use_amp} "
-        f"loss={loss_mode} bce={bce_mix}"
+        "SUPERNODE start "
+        f"client={args.client_id} superlink={args.superlink} appio=127.0.0.1:{appio_port} "
+        f"data={data_path}"
     )
-
-    print("CLIENT phase=model")
-    model = FraudMLP(device=str(device))
-    print("CLIENT phase=data")
-    train_dataset, val_dataset = split_dataset(path, val_split=0.15)
-    val_loader = DataLoader(
-        val_dataset,
-        shuffle=False,
-        **loader_kwargs(
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=(device.type == "cuda"),
-            prefetch_factor=prefetch_factor,
-        ),
-    )
-
-    print("CLIENT phase=init")
-    client = FraudClient(
-        model=model,
-        train_dataset=train_dataset,
-        val_loader=val_loader,
-        local_epochs=epochs,
-        lr=1e-3,
-        weight_decay=1e-4,
-        batch_size=batch_size,
-    )
-
-    print("CLIENT phase=connect")
-    try:
-        start_client(
-            server_address=addr,
-            client=client.to_client(),
-        )
-    except Exception as exc:
-        detail = exc.details() if hasattr(exc, "details") else str(exc)
-        raise SystemExit(f"CLIENT connect_failed addr={addr} detail={detail}") from None
+    raise SystemExit(subprocess.call(cmd))
 
 
 if __name__ == "__main__":
