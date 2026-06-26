@@ -4,17 +4,60 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sized
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
 
-from src.data.feature_registry import FEATURE_ORDER, LABEL
+from src.data.feature_registry import FEATURE_ORDER, LABEL, SCHEMA_VERSION
 
 PASS_ONLY: list[str] = []
 
 assert LABEL not in FEATURE_ORDER
+
+
+def _infer_num_clients(path: Path) -> int | None:
+    client_dir = path.parent
+    data_root = client_dir.parent
+    if not client_dir.name.startswith("client_") or not data_root.exists():
+        return None
+    count = sum(
+        1
+        for child in data_root.glob("client_*")
+        if (child / "transactions_normalized.parquet").exists()
+    )
+    return count or None
+
+
+def _schema_error(path: str | Path, missing: list[str]) -> ValueError:
+    data_path = Path(path)
+    num_clients = _infer_num_clients(data_path)
+    client_hint = "$env:NUM_CLIENTS=<matching_client_count>"
+    if num_clients is not None:
+        client_hint = f"$env:NUM_CLIENTS={num_clients}"
+    preview = ", ".join(missing[:8])
+    extra = "" if len(missing) <= 8 else f", ... +{len(missing) - 8} more"
+    return ValueError(
+        "Processed dataset schema is stale or incomplete. "
+        f"schema={SCHEMA_VERSION} expected_features={len(FEATURE_ORDER)} "
+        f"path={data_path} missing=[{preview}{extra}]. "
+        "Rebuild the processed data before starting Flower: "
+        f"{client_hint}; uv run python dataset/load_ieee_cis.py"
+    )
+
+
+def validate_processed_schema(path: str | Path) -> None:
+    """Validate that a processed parquet file matches the active feature schema."""
+    data_path = Path(path)
+    if not data_path.exists():
+        raise FileNotFoundError(f"Processed client data not found: {data_path}")
+    columns = list(pq.ParquetFile(data_path).schema.names)
+    missing = [c for c in FEATURE_ORDER + [LABEL] if c not in columns]
+    if missing:
+        raise _schema_error(data_path, missing)
 
 
 class FraudDataset(Dataset):
@@ -23,7 +66,8 @@ class FraudDataset(Dataset):
     def __init__(self, path: str):
         df = pd.read_parquet(path)
         missing = [c for c in FEATURE_ORDER + [LABEL] if c not in df.columns]
-        assert not missing, f"Missing columns: {missing}"
+        if missing:
+            raise _schema_error(path, missing)
         self.X = torch.tensor(df[FEATURE_ORDER].values, dtype=torch.float32)
         self.y = torch.tensor(df[LABEL].values, dtype=torch.float32)
         self.meta = df[PASS_ONLY].copy() if all(c in df.columns for c in PASS_ONLY) else None

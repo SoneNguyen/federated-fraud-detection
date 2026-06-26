@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 
 from scripts.resource_profile import apply_client_resource_env, plan_resources
+from src.data.dataset import validate_processed_schema
+from src.system.resilience import maybe_prepare_processed_data, write_failure_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +64,11 @@ def parse_args() -> argparse.Namespace:
         default=float(os.environ.get("CLIENT_MONITOR_SECONDS", "2.0")),
         help="Delay between process health checks.",
     )
+    parser.add_argument(
+        "--no-auto-prepare-data",
+        action="store_true",
+        help="Fail instead of rebuilding processed IEEE-CIS data when raw files are available.",
+    )
     return parser.parse_args()
 
 
@@ -78,19 +85,30 @@ def main() -> None:
     if args.restart_limit < 0:
         raise ValueError("--restart-limit must be >= 0")
 
-    data_root = Path(args.data_root)
-    missing = [
-        client_data_path(data_root, cid)
-        for cid in range(args.num_clients)
-        if not client_data_path(data_root, cid).exists()
-    ]
-    if missing:
-        joined = "\n".join(str(path) for path in missing[:10])
-        extra = "" if len(missing) <= 10 else f"\n... and {len(missing) - 10} more"
-        raise FileNotFoundError(
-            "Missing processed client data. Re-run preprocessing with matching "
-            f"NUM_CLIENTS={args.num_clients}.\n{joined}{extra}"
+    try:
+        data_root = Path(args.data_root)
+        maybe_prepare_processed_data(
+            num_clients=args.num_clients,
+            data_root=data_root,
+            auto_prepare=not args.no_auto_prepare_data,
         )
+        missing = [
+            client_data_path(data_root, cid)
+            for cid in range(args.num_clients)
+            if not client_data_path(data_root, cid).exists()
+        ]
+        if missing:
+            joined = "\n".join(str(path) for path in missing[:10])
+            extra = "" if len(missing) <= 10 else f"\n... and {len(missing) - 10} more"
+            raise FileNotFoundError(
+                "Missing processed client data. Re-run preprocessing with matching "
+                f"NUM_CLIENTS={args.num_clients}.\n{joined}{extra}"
+            )
+        for cid in range(args.num_clients):
+            validate_processed_schema(client_data_path(data_root, cid))
+    except Exception as exc:
+        write_failure_report(Path("outputs/runtime/last_failure.md"), str(exc))
+        raise
 
     profile = plan_resources(
         num_clients=args.num_clients,

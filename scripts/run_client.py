@@ -7,6 +7,9 @@ import os
 import subprocess
 from pathlib import Path
 
+from src.data.dataset import validate_processed_schema
+from src.system.resilience import find_free_port, port_is_free, require_commands, write_failure_report
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start one Flower SuperNode.")
@@ -35,13 +38,27 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    data_path = Path(args.data_path) if args.data_path else (
-        Path("dataset/processed") / f"client_{args.client_id}" / "transactions_normalized.parquet"
-    )
-    if not data_path.exists():
-        raise FileNotFoundError(f"Client data not found: {data_path}")
+    try:
+        require_commands(["flower-supernode"])
+        data_path = Path(args.data_path) if args.data_path else (
+            Path("dataset/processed") / f"client_{args.client_id}" / "transactions_normalized.parquet"
+        )
+        if not data_path.exists():
+            raise FileNotFoundError(f"Client data not found: {data_path}")
+        validate_processed_schema(data_path)
 
-    appio_port = args.clientappio_port or (9094 + args.client_id)
+        requested_port = args.clientappio_port or (9094 + args.client_id)
+        appio_port = requested_port
+        if not port_is_free("127.0.0.1", requested_port):
+            appio_port = find_free_port("127.0.0.1", requested_port + 100)
+            print(
+                "RESILIENCE client AppIO port busy; "
+                f"client={args.client_id} requested={requested_port} using={appio_port}"
+            )
+    except Exception as exc:
+        write_failure_report(Path("outputs/runtime/last_failure.md"), str(exc))
+        raise
+
     node_config = (
         f"client-id={args.client_id} "
         f"partition-id={args.client_id} "

@@ -19,7 +19,7 @@ from scripts.run_paths import checkpoint_dir as default_checkpoint_dir
 from scripts.run_paths import results_dir as default_results_dir
 from src.server.runtime import lr_schedule
 from src.client.client import FraudClient
-from src.data.dataset import loader_kwargs, split_dataset
+from src.data.dataset import loader_kwargs, split_dataset, validate_processed_schema
 from src.model.fraud_mlp import FraudMLP, federated_params, is_federated_param
 from src.server.aggregation import (
     robust_blended_average_ndarrays,
@@ -223,6 +223,8 @@ def main() -> None:
     missing = [_client_path(data_root, cid) for cid in range(args.num_clients) if not _client_path(data_root, cid).exists()]
     if missing:
         raise FileNotFoundError(f"Missing client data: {missing[0]}")
+    for cid in range(args.num_clients):
+        validate_processed_schema(_client_path(data_root, cid))
 
     checkpoint_dir = default_checkpoint_dir()
     results_dir = default_results_dir()

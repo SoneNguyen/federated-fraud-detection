@@ -39,6 +39,14 @@ The active schema is `fraud-history-scalable` with 328 features. Re-run this
 step after pulling schema changes; old processed Parquet files and old
 checkpoints are not compatible with the new input dimension.
 
+If Flower reports `Processed dataset schema is stale or incomplete`, rebuild
+the processed split with the same client count you are about to train:
+
+```powershell
+$env:NUM_CLIENTS=10
+uv run python dataset/load_ieee_cis.py
+```
+
 ## Prepare Vietnam-Style Data
 
 Generate synthetic Vietnam-style transactions:
@@ -75,8 +83,20 @@ uv run python -m dataset.load_custom_transactions `
 
 For normal local training, use the orchestrator. It starts SuperLink,
 SuperNodes, submits the Flower run, streams the run, and stops background
-processes when the run finishes. The launcher automatically plans local
-resources:
+processes when the run finishes. This is the recommended portable path for
+other machines because the runtime now self-heals common local failures:
+
+```text
+stale Flower DB     archived before startup instead of crashing on missing tables
+busy ports          nearby free ports are selected by the orchestrator
+missing data        processed IEEE-CIS data is rebuilt when raw files are present
+stale schema        startup stops early with a precise rebuild message
+client crashes      launcher restarts failed clients up to the configured limit
+AppIO port clash    each client picks a nearby free local port
+failure report      last repair/failure reason is written to outputs/runtime/last_failure.md
+```
+
+The launcher also plans local resources:
 
 ```text
 active clients       enough clients for Flower, bounded for memory safety
@@ -94,6 +114,10 @@ $env:FRESH_RUN=1
 $env:RESUME_FROM_CHECKPOINT=0
 uv run python -m scripts.run_local_flower --num-clients 10 --rounds 100 --model-run 10_clients
 ```
+
+If another terminal is already using the default Flower ports, the orchestrator
+automatically chooses replacement ports and passes them to the server, clients,
+and run submission.
 
 Override resource planning only when needed:
 
@@ -119,6 +143,18 @@ uv run python -m scripts.run_server
 This starts Flower SuperLink. It is expected to keep running and wait.
 It is not frozen; training starts only after SuperNodes connect and a run is
 submitted.
+
+By default the local SuperLink uses in-memory runtime state. This avoids
+`sqlite3.OperationalError: database is locked` and stale schema errors such as
+`no such table: fab` during repeated experiments.
+If you previously started SuperLink with a persistent database, stop the old
+Flower terminals before starting a new run. Only set `FLOWER_SUPERLINK_DB` when
+you intentionally need persistent SuperLink task state. If a persistent database
+is incompatible, startup archives it under:
+
+```text
+outputs/archive/self_heal/
+```
 
 Terminal 2, clients:
 
@@ -255,6 +291,7 @@ Run folders:
 ```text
 outputs/checkpoints/<run>/
 results/<run>/
+outputs/runtime/last_failure.md
 ```
 
 List known runs:

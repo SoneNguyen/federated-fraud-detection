@@ -9,7 +9,7 @@ import torch
 from collections.abc import Sized
 from typing import cast
 
-from src.data.dataset import FEATURE_ORDER, LABEL, FraudDataset, make_loaders
+from src.data.dataset import FEATURE_ORDER, LABEL, FraudDataset, make_loaders, validate_processed_schema
 
 
 def _write_parquet(path: Path, n: int = 1000, fraud_rate: float = 0.02) -> Path:
@@ -86,5 +86,14 @@ def test_dataset_missing_column_raises(tmp_path):
     p = tmp_path / "bad.parquet"
     df = pd.DataFrame({"tx_amount_usd": [1.0], "is_fraud": [0]})
     df.to_parquet(p)
-    with pytest.raises(AssertionError, match="Missing columns"):
+    with pytest.raises(ValueError, match="Processed dataset schema is stale"):
         FraudDataset(str(p))
+
+
+def test_validate_processed_schema_reports_rebuild_hint(tmp_path):
+    p = tmp_path / "client_0" / "transactions_normalized.parquet"
+    p.parent.mkdir(parents=True)
+    pd.DataFrame({"tx_amount_usd": [1.0], LABEL: [0]}).to_parquet(p)
+
+    with pytest.raises(ValueError, match="uv run python dataset/load_ieee_cis.py"):
+        validate_processed_schema(p)

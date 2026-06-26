@@ -67,6 +67,50 @@
         "mean": 0.50805981,
         "std": 0.29333677
     },
+    "hour_sin": {
+        "mean": -0.37105439,
+        "std": 0.59718794
+    },
+    "hour_cos": {
+        "mean": 0.21765788,
+        "std": 0.67698613
+    },
+    "day_sin": {
+        "mean": -0.00199399,
+        "std": 0.71058518
+    },
+    "day_cos": {
+        "mean": 0.0408635,
+        "std": 0.70242074
+    },
+    "amount_prior_z": {
+        "mean": 0.00165785,
+        "std": 0.91796011
+    },
+    "amount_prior_log_ratio": {
+        "mean": -0.50894808,
+        "std": 0.93731584
+    },
+    "count_acceleration_1h": {
+        "mean": 0.95338032,
+        "std": 0.6172645
+    },
+    "volume_pressure_24h": {
+        "mean": 3.88075294,
+        "std": 0.94857366
+    },
+    "identity_risk_score": {
+        "mean": 0.45638314,
+        "std": 0.13520745
+    },
+    "rule_stack_risk_score": {
+        "mean": 0.35875788,
+        "std": 0.19464447
+    },
+    "rare_identity_score": {
+        "mean": 0.00169421,
+        "std": 0.02067501
+    },
     "card1_norm": {
         "mean": 9.02482358,
         "std": 0.66392733

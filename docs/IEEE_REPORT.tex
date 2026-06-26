@@ -3,6 +3,7 @@
 
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{array}
 \usepackage{booktabs}
 \usepackage{cite}
 \usepackage{graphicx}
@@ -19,7 +20,7 @@
 
 \begin{document}
 
-\title{Federated Fraud Detection with Scalable Client Simulation, Vietnam-Style Data Extension, and Fault-Tolerant Recovery}
+\title{Federated Fraud Detection with Scalable Aggregation, Vietnam-Oriented Data Extension, and Fault-Tolerant Recovery}
 
 \author{
 \IEEEauthorblockN{Ngoc Bui}
@@ -30,336 +31,644 @@ Email: project author}
 \maketitle
 
 \begin{abstract}
-This report presents a federated learning system for fraud detection using the
-IEEE-CIS fraud dataset as the reproducible baseline. The system trains a
-residual multilayer perceptron across temporal client partitions, aggregates
-client updates through target-aware robust federated averaging, and serves the selected
-global model through a FastAPI and React transaction-screening interface. After
-technical review feedback, the project was extended toward three research concerns:
-Vietnam-oriented dataset expansion, scalability beyond three clients, and fault
-tolerance. The implementation now includes a custom transaction adapter,
-Vietnam-style synthetic transaction generation, zero-shot external dataset
-evaluation, coverage-aware large-client training, virtual 100-client federated
-training for local machines, checkpoint recovery, drift rollback utilities, and
-a tested Phi Accrual failure detector utility. The report is explicit about the
-current prototype boundary: round-level Flower failures and checkpoint recovery
-are implemented, while live Phi/SWIM membership, secure aggregation, and real
-Vietnam partner data remain production extensions.
+Financial fraud detection is difficult to centralize because transaction data is
+sensitive, institution-specific, and legally constrained. This project builds a
+federated learning system for fraud detection in which clients train locally and
+only model updates are sent to the server. The baseline dataset is IEEE-CIS
+Fraud Detection, and the system is extended with a custom transaction adapter
+and a Vietnam-style synthetic payment dataset to prepare for future Vietnamese
+banking or wallet data. The proposed system uses a residual multilayer
+perceptron, a 328-feature transaction schema, target-aware robust federated
+averaging, adaptive training schedules, per-round checkpoint recovery, and a Phi
+Accrual failure detector utility. Experimental artifacts show that the 10-client
+run reached the deployment target with AUPRC 0.7106, AUROC 0.9431, and F1
+0.7025 at round 100. A previous 100-client scalability comparison reached the
+target at its best round but regressed by the final round, showing why large
+client counts require coverage-aware sampling, robust aggregation, update
+stabilization, and more total data rather than only splitting one dataset into
+more clients. The system is therefore best described as a research prototype
+with working training, inference, checkpoint recovery, large-client simulation,
+and a concrete path toward Vietnam-focused deployment.
 \end{abstract}
 
 \begin{IEEEkeywords}
-federated learning, fraud detection, fault tolerance, scalability, Phi Accrual,
-Vietnam payments, IEEE-CIS
+federated learning, fraud detection, financial technology, fault tolerance,
+scalability, Phi Accrual, Vietnam payments, IEEE-CIS
 \end{IEEEkeywords}
 
 \section{Introduction}
 
-Fraud detection is a natural application for federated learning because banks,
-payment gateways, wallets, and merchants often cannot centralize raw transaction
-records. The goal of this project is to train a fraud model while keeping client
-data local, then expose the trained model through a practical transaction
-screening interface.
+Digital payments create large volumes of transactional data, but fraud labels
+are rare and the most useful signals are often distributed across separate
+organizations. A bank may know account history, a payment gateway may know
+merchant behavior, a wallet may know device and channel behavior, and an
+e-commerce platform may know order context. Centralizing all of this data is
+usually unrealistic because of privacy, regulation, business confidentiality,
+and operational risk. Federated learning is therefore a suitable architecture:
+each organization keeps its data local, trains a local model, and sends model
+updates to a central server for aggregation.
 
-The initial prototype used three temporal IEEE-CIS client partitions. Feedback
-from technical review highlighted three gaps: the system should not rely
-on only one dataset, it should demonstrate scalability beyond three clients, and
-it should give a more concrete answer for fault tolerance and membership
-detection. This report therefore focuses on the improved design:
+The initial version of this project trained on IEEE-CIS Fraud Detection using
+three temporal clients. The project was then expanded after review feedback in
+four directions:
 
-\begin{itemize}
-  \item a partner/Vietnam dataset adapter and synthetic Vietnam-style generator;
-  \item 3, 10, and 100-client experiment paths;
-  \item target-aware and stabilized aggregation for large client counts;
-  \item checkpoint recovery, failure handling, and Phi Accrual failure suspicion.
-\end{itemize}
+\begin{enumerate}
+  \item avoid relying on a single dataset by adding a partner/custom transaction
+        adapter and a Vietnam-style synthetic dataset path;
+  \item compare 3, 10, and 100-client federated behavior;
+  \item make the server aggregation algorithm explicit and implement it in code;
+  \item improve fault-tolerance discussion with checkpoints, round-level failure
+        handling, and a Phi Accrual detector utility.
+\end{enumerate}
 
-\section{Dataset Design}
+The project is not presented as a finished banking product. It is a working
+research prototype that demonstrates the core distributed-system ideas, the
+fraud-modeling pipeline, and the limitations that must be solved before
+production use.
 
-\subsection{IEEE-CIS Baseline}
+\section{Problem Statement}
 
-The baseline dataset is IEEE-CIS Fraud Detection from Kaggle. The preprocessing
-pipeline merges transaction and identity records by transaction identifier, sorts
-records by transaction time, engineers the model schema, normalizes numeric
-features, and writes client-specific Parquet files. The processed baseline has
-590,540 transactions and 328 model features.
+The technical problem is to train and serve a fraud detection model under four
+constraints.
 
-Temporal partitioning is used instead of random partitioning. Let the ordered
-transaction table be \(D=\{x_1,\ldots,x_N\}\). For \(K\) clients, client \(k\)
-receives a contiguous time slice:
+\subsection{Privacy and Data Locality}
 
-\begin{equation}
-D_k = \{x_i \mid \lfloor kN/K \rfloor \leq i < \lfloor (k+1)N/K \rfloor\}.
-\end{equation}
+Raw transaction data should remain on each client. The server should not require
+direct access to private transaction records. This is important for financial
+institutions because transaction histories, device identifiers, email domains,
+and fraud labels are sensitive.
 
-This produces a non-IID federated setting because each client observes a
-different time window and fraud rate.
+\subsection{Class Imbalance}
 
-\subsection{Vietnam Dataset Direction}
+Fraud is rare. In the IEEE-CIS baseline, only about 3.5 percent of transactions
+are fraud. Accuracy is therefore misleading: a model that approves every
+transaction can appear accurate but is useless. The project uses AUPRC, AUROC,
+and F1 as the primary metrics, with AUPRC emphasized because it reflects ranking
+quality under class imbalance.
 
-No reliable public transaction-level Vietnamese fraud dataset is available for
-direct model training. Realistic Vietnam deployment requires a partner dataset
-from a bank, wallet, gateway, e-commerce platform, or university collaboration.
-The minimum useful fields are transaction time, amount, and fraud label. Stronger
-fields include account identifiers, merchant identifiers, device identifiers,
-province/region, payment channel, account age, recent transaction counts,
-chargeback labels, and location velocity.
+\subsection{Non-IID Client Data}
 
-The project implements a custom transaction adapter:
+Client data distributions differ. A temporal split means client 0 may see an
+earlier fraud pattern while client 9 sees a later one. A real deployment would
+be even more heterogeneous because different banks, wallets, merchants, and
+regions have different customer behavior. The aggregation algorithm must
+therefore tolerate noisy and uneven local updates.
 
-\begin{lstlisting}
-config/custom_transaction_mapping.example.json
-dataset/custom_transaction_adapter.py
-dataset/load_custom_transactions.py
-\end{lstlisting}
+\subsection{Scalability and Failure}
 
-The adapter maps partner columns into the active IEEE-like transaction contract.
-Missing columns are filled with deterministic neutral defaults. This keeps the
-pipeline runnable but must be disclosed because missing behavioral fields reduce
-expected model quality.
+The system must continue operating when clients fail or when the number of
+clients increases. A three-client demonstration is not enough to show a credible
+distributed system. The project therefore adds 10-client and 100-client run
+paths, checkpoint recovery, and a failure-suspicion utility based on Phi
+Accrual.
 
-\subsection{Synthetic Vietnam-Style Data}
+\section{Related Work}
 
-The project includes a synthetic generator shaped around Vietnam-style payment
-behavior:
+Federated Averaging (FedAvg) is the standard baseline for federated neural
+network training. In FedAvg, selected clients train locally and the server
+averages their parameters weighted by sample count \cite{fedavg}. Flower
+provides a practical framework for building this workflow and exposes
+server-side strategies such as FedAvg \cite{flowerstrategy, flowerdocs}.
 
-\begin{lstlisting}
-dataset/generate_vietnam_synthetic.py
-config/vietnam_synthetic_mapping.json
-\end{lstlisting}
+Fraud detection is a class-imbalanced ranking task. Davis and Goadrich show why
+precision-recall analysis can be more informative than ROC analysis when the
+positive class is rare \cite{prroc}. This motivates using AUPRC as the main
+model-selection metric.
 
-The generator creates wallet, QR, gateway, and bank-transfer-like transactions
-with fields such as provider, channel, VND amount, customer id, merchant id,
-bank pair, device id, province, transaction velocity, distance, and chargeback
-count. It is useful for integration testing and demonstration, not as evidence
-of real Vietnam fraud accuracy.
+The model architecture borrows two deep-learning ideas. Residual connections
+help train deeper networks by learning corrections to a hidden representation
+\cite{resnet}. Layer normalization stabilizes hidden activations without using
+batch-level running statistics \cite{layernorm}. This matters in federated
+learning because client distributions are non-IID; averaging BatchNorm running
+statistics across clients can produce statistics that do not match any real
+client.
 
-\section{Feature Engineering and Model}
+Fault detection in distributed systems is commonly handled with adaptive
+failure detectors rather than fixed timeouts. Phi Accrual converts heartbeat
+silence into a suspicion score \cite{phi}. SWIM provides scalable membership
+and failure detection using gossip-style probing \cite{swim}. This project
+implements Phi Accrual as a tested utility and leaves full live membership
+integration as future work.
 
-The model input is the ordered feature list in \texttt{src/data/feature\_registry.py}.
-Important feature groups are amount, log amount, transaction volume, cyclic
-hour/day signals, burst and amount-deviation signals, card/product/email/device
-signals, frequency encodings, identity risk-shape scores, and backward-looking
-fraud history.
+Robust aggregation is related to Byzantine-resilient learning. Krum,
+coordinate median, and trimmed mean reduce the impact of outlier or malicious
+updates \cite{krum, byzantine}. This project does not claim full Byzantine
+security, but it uses robust blending to reduce large-client instability.
 
-Numeric normalization uses saved training statistics:
+Vietnam payment behavior is relevant because public infrastructure includes
+wallet payments, payment gateway flows, QR payments, ATM/POS switching, and
+interbank transfer rails. Public documentation from MoMo, VNPAY, and NAPAS
+motivates the synthetic Vietnam-style fields, but the project clearly separates
+synthetic testing from real Vietnamese fraud evidence \cite{momo, vnpay,
+napas}.
 
-\begin{equation}
-z_j = \frac{x_j-\mu_j}{\max(\sigma_j,10^{-8})}.
-\end{equation}
+\section{Proposed Approaches}
 
-External and partner datasets reuse the IEEE-CIS normalization parameters during
-zero-shot evaluation. Re-fitting normalization would change the experiment.
+\subsection{Overall Architecture}
 
-The model is a residual MLP:
+The system has five layers:
 
-\begin{equation}
-h_0 = W_0x+b_0,
-\end{equation}
+\begin{enumerate}
+  \item data ingestion and feature engineering;
+  \item local client training;
+  \item server aggregation and checkpointing;
+  \item offline and zero-shot evaluation;
+  \item FastAPI and React transaction-screening demonstration.
+\end{enumerate}
 
-\begin{equation}
-h_{\ell+1}=h_\ell + f_\ell(\operatorname{LayerNorm}(h_\ell)),
-\end{equation}
+The main implementation modules are listed in Table~\ref{tab:modules}.
 
-\begin{equation}
-p(y=1|x)=\sigma(g(h_L)).
-\end{equation}
+\begin{table*}[t]
+\caption{Main Implementation Modules}
+\label{tab:modules}
+\centering
+\begin{tabular}{p{0.32\textwidth}p{0.60\textwidth}}
+\toprule
+\textbf{Module} & \textbf{Responsibility} \\
+\midrule
+\texttt{dataset/load\_ieee\_cis.py} & Loads IEEE-CIS, merges transaction and identity tables, engineers features, normalizes values, and writes client Parquet files. \\
+\texttt{dataset/custom\_transaction\_adapter.py} & Maps partner or synthetic transaction columns into the active feature contract. \\
+\texttt{dataset/generate\_vietnam\_synthetic.py} & Generates Vietnam-style payment records for system testing. \\
+\texttt{src/data/feature\_registry.py} & Defines the 328-feature schema and label contract. \\
+\texttt{src/model/fraud\_mlp.py} & Implements the residual MLP fraud classifier. \\
+\texttt{src/client/client.py} & Implements Flower client training, loss functions, sampling, evaluation, and metrics. \\
+\texttt{src/server/aggregation.py} & Implements target-aware weighting, robust blending, and update stabilization. \\
+\texttt{src/server/strategy.py} & Implements the Flower server strategy, client sampling, checkpoint persistence, and training summaries. \\
+\texttt{src/server/failure\_detector.py} & Implements Phi Accrual failure suspicion. \\
+\texttt{scripts/run\_local\_flower.py} & Runs local Flower infrastructure, clients, and a submitted run. \\
+\texttt{scripts/run\_virtual\_federated.py} & Runs many virtual clients in one process for scalable local experiments. \\
+\texttt{api/main.py} and \texttt{app/} & Serve the selected model and provide the transaction-screening GUI. \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
-The implementation uses 328 input features, hidden dimension 256, three residual
-blocks, and a LayerNorm/ReLU head. LayerNorm is preferred over BatchNorm because
-client distributions are non-IID; averaged BatchNorm running statistics may not
-match any client.
+\subsection{Data Partitioning}
 
-\section{Federated Optimization}
-
-\subsection{Target-Aware Federated Averaging}
-
-Each selected client trains locally and returns parameters and validation
-metrics. The server computes a target progress score:
-
-\begin{equation}
-s_i = 0.35\min\left(\frac{AUPRC_i}{T_A},1\right)
-    + 0.20\min\left(\frac{AUROC_i}{T_R},1\right)
-    + 0.45\min\left(\frac{F1_i}{T_F},1\right).
-\end{equation}
-
-The aggregation weight combines quality and sample count:
-
-\begin{equation}
-\alpha_i = q_i\sqrt{n_i}, \qquad
-w_i = \frac{\alpha_i}{\sum_j \alpha_j}.
-\end{equation}
-
-The weighted update is:
-
-\begin{equation}
-\theta^{weighted}_{r+1} = \sum_i w_i\theta_i.
-\end{equation}
-
-For large client counts, the scalable profile uses more conservative quality
-weights, coverage-aware sampling, and robust blending. Let
-\(\theta^{robust}_{r+1}\) be a coordinate trimmed mean or coordinate median of
-client parameters. The proposed aggregate is:
-
-\begin{equation}
-\theta^{proposed}_{r+1} =
-(1-\beta)\theta^{weighted}_{r+1}+\beta\theta^{robust}_{r+1}.
-\end{equation}
-
-This reduces overreaction to noisy client metrics and outlier client updates.
-
-\subsection{Update Stabilization}
-
-For 50 or more configured clients, the server applies update damping and norm
-clipping:
+The IEEE-CIS dataset is sorted by transaction time. For \(K\) clients, client
+\(k\) receives a contiguous temporal slice:
 
 \begin{equation}
-\Delta_r = \theta^{proposed}_{r+1}-\theta_r,
+D_k=\{x_i \mid \lfloor kN/K \rfloor \leq i < \lfloor (k+1)N/K \rfloor\}.
+\end{equation}
+
+Temporal partitioning is intentionally harder than random splitting because it
+reduces future leakage and creates more realistic distribution shift.
+
+\subsection{Feature Engineering}
+
+The active schema is named \texttt{fraud-history-scalable} and contains 328
+features. The important feature groups are shown in Table~\ref{tab:features}.
+
+\begin{table}[t]
+\caption{Feature Groups}
+\label{tab:features}
+\centering
+\begin{tabular}{p{0.30\columnwidth}p{0.58\columnwidth}}
+\toprule
+\textbf{Group} & \textbf{Purpose} \\
+\midrule
+Amount and volume & Capture transaction size, recent spending, and amount pressure. \\
+Time features & Encode hour, day, risky-hour flag, and cyclic time behavior. \\
+Identity and device & Capture card, email, address, device, and product signals. \\
+Frequency encoding & Represent repeated identifiers without exposing raw strings. \\
+Historical behavior & Use backward-looking count, mean amount, fraud rate, and time-since-previous features. \\
+Risk-shape features & Combine velocity, amount deviation, rare identity, and rule-stack behavior. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Numeric features are normalized using training statistics:
+
+\begin{equation}
+z_j=\frac{x_j-\mu_j}{\max(\sigma_j,10^{-8})}.
+\end{equation}
+
+The normalization parameters are saved in
+\texttt{config/normalization\_params.json}. External datasets reuse these
+statistics during zero-shot evaluation. Re-fitting the scaler on a new dataset
+would change the experiment and hide domain shift.
+
+\subsection{Model Architecture}
+
+The model is a residual multilayer perceptron:
+
+\begin{equation}
+h_0=W_0x+b_0,
 \end{equation}
 
 \begin{equation}
-\Delta'_r =
-\Delta_r\cdot
-\min\left(1,\frac{\rho\|\theta_r\|_2}{\|\Delta_r\|_2+\epsilon}\right),
+h_{\ell+1}=h_\ell+f_\ell(\operatorname{LayerNorm}(h_\ell)),
 \end{equation}
 
 \begin{equation}
-\theta_{r+1} = \theta_r + \eta_s\Delta'_r.
+\hat{y}=\sigma(g(h_L)).
 \end{equation}
 
-The default scalable values are \(\eta_s=0.65\), \(\rho=0.035\), trim ratio
-0.10, and robust blend \(\beta=0.25\). This is implemented in
-\texttt{src/server/aggregation.py}.
+The implementation uses 328 input features, hidden dimension 256, three
+residual blocks, and a LayerNorm/ReLU classification head. Hidden dimension 256
+is a practical compromise: it is wide enough to represent interactions between
+amount, time, identity, and history features, but small enough for repeated
+client-side training rounds on a laptop. Three residual blocks give enough
+depth for nonlinear feature interactions without making federated updates too
+large or unstable. LayerNorm is used instead of BatchNorm because each client
+has a different local distribution and fraud rate.
 
-\section{Scalability}
+\subsection{Client Training Objective}
 
-The project supports two scalability modes. The first is network/process mode,
-where multiple Flower client processes connect to a server. This demonstrates
-distributed process behavior but is limited by local machine memory when many
-PyTorch processes run on Windows.
+Each client trains with a hybrid loss combining focal loss and weighted binary
+cross entropy. Focal loss is:
 
-The second is virtual federated training:
+\begin{equation}
+\mathcal{L}_{focal}
+=-\alpha_t(1-p_t)^\gamma\log(p_t),
+\end{equation}
 
-\begin{lstlisting}
-scripts/run_virtual_federated.py
-\end{lstlisting}
+where \(p_t\) is the predicted probability assigned to the true class. Weighted
+BCE provides a stable baseline for rare positives:
 
-This mode keeps 100 client partitions and the same aggregation logic but runs
-clients sequentially in one Python process. PyTorch is loaded once, so the
-experiment measures federated learning behavior rather than operating system
-page-file limits.
+\begin{equation}
+\mathcal{L}_{bce}
+=-[w y\log(\hat{y})+(1-y)\log(1-\hat{y})].
+\end{equation}
 
-Scalability must be interpreted carefully. If the same fixed dataset is split
-from 3 clients to 100 clients, each client receives fewer fraud examples and
-local metrics become noisier. Therefore, performance is not expected to improve
-linearly with client count. The project target is operational scalability:
-client coverage, stable near-target metrics, bounded regressions, and recovery
-from failed clients. True performance scaling requires more total data, not only
-more partitions of the same data.
+The hybrid loss is:
 
-\section{Fault Tolerance}
+\begin{equation}
+\mathcal{L}=(1-\lambda)\mathcal{L}_{focal}+\lambda\mathcal{L}_{bce}.
+\end{equation}
 
-\subsection{Implemented Recovery}
+FedProx regularization is optionally added to reduce client drift:
 
-The implemented fault-tolerance path includes:
+\begin{equation}
+\mathcal{L}_{client}=\mathcal{L}+\frac{\mu}{2}\|\theta-\theta_r\|_2^2.
+\end{equation}
 
-\begin{itemize}
-  \item Flower round-level failure handling;
-  \item aggregation over successful clients;
-  \item per-round checkpointing;
-  \item resume from compatible checkpoint;
-  \item drift alert rollback utility.
-\end{itemize}
+The client also uses a weighted sampler so that fraud examples appear often
+enough to produce a useful gradient while still keeping the training
+distribution close to the real distribution.
+
+\subsection{Target-Aware Robust Federated Averaging}
+
+The server aggregation algorithm is explicitly implemented in
+\texttt{src/server/aggregation.py}. The target metrics are:
+
+\begin{equation}
+T_A=0.70,\quad T_R=0.90,\quad T_F=0.70,
+\end{equation}
+
+where \(T_A\), \(T_R\), and \(T_F\) correspond to AUPRC, AUROC, and F1. Client
+\(i\) receives a capped target progress score:
+
+\begin{equation}
+s_i=0.35\min\left(\frac{AUPRC_i}{T_A},1\right)
++0.20\min\left(\frac{AUROC_i}{T_R},1\right)
++0.45\min\left(\frac{F1_i}{T_F},1\right).
+\end{equation}
+
+The server then builds a sample and quality-aware weight:
+
+\begin{equation}
+\alpha_i=q_i\sqrt{n_i},\qquad
+w_i=\frac{\alpha_i}{\sum_j\alpha_j}.
+\end{equation}
+
+The square root reduces domination by a single large client while still
+respecting sample size. The weighted FedAvg estimate is:
+
+\begin{equation}
+\theta^{weighted}_{r+1}=\sum_i w_i\theta_i.
+\end{equation}
+
+For larger client counts, the server blends this weighted average with a robust
+coordinate statistic:
+
+\begin{equation}
+\theta^{proposed}_{r+1}
+=(1-\beta)\theta^{weighted}_{r+1}
++\beta\theta^{robust}_{r+1}.
+\end{equation}
+
+Here \(\theta^{robust}_{r+1}\) is a coordinate trimmed mean or coordinate
+median. This helps when some clients are noisy, stale, or locally overfit.
+
+\subsection{Server Update Stabilization}
+
+Large federations can produce unstable aggregate jumps. The server therefore
+clips and damps the update:
+
+\begin{equation}
+\Delta_r=\theta^{proposed}_{r+1}-\theta_r,
+\end{equation}
+
+\begin{equation}
+\Delta'_r=\Delta_r\min\left(1,
+\frac{\rho\|\theta_r\|_2}{\|\Delta_r\|_2+\epsilon}\right),
+\end{equation}
+
+\begin{equation}
+\theta_{r+1}=\theta_r+\eta_s\Delta'_r.
+\end{equation}
+
+For 50 or more configured clients, the default scalable settings are server
+learning rate \(\eta_s=0.65\), maximum update ratio \(\rho=0.035\), trim ratio
+0.10, and robust blend \(\beta=0.25\).
+
+\subsection{Adaptive Training Schedule}
+
+The schedule controller in \texttt{src/server/training\_schedule.py} observes
+recent validation loss, AUPRC slope, F1 slope, and target score. It switches
+between warmup, learning, plateau, recovery, and refine phases. When training
+regresses, it lowers client learning rate, lowers server learning rate,
+increases BCE stability, and increases FedProx strength. When training is
+stalled below target, it uses a milder recovery schedule. This prevents the
+system from continuing aggressive updates after the model has already started
+to degrade.
+
+\subsection{Fault Tolerance and Recovery}
 
 At round \(r\), the server saves:
 
 \begin{equation}
-C_r = (r,\theta_r,metadata_r).
+C_r=(r,\theta_r,M_r),
 \end{equation}
 
-On restart, the server loads the latest compatible checkpoint:
+where \(M_r\) contains metadata such as aggregation weights, participating
+clients, schedule state, and metrics. On restart, the server selects the latest
+compatible checkpoint:
 
 \begin{equation}
-r^* = \max\{r \mid C_r \text{ exists and matches the model schema}\}.
+r^*=\max\{r\mid C_r \text{ exists and matches the active schema}\}.
 \end{equation}
 
-\subsection{Phi Accrual Failure Detector}
+Flower also allows a round to continue when some clients fail and enough client
+results remain. The implemented prototype aggregates successful client results,
+records failures, and writes per-round checkpoint files under the configured
+run folder.
 
-The project now includes a tested Phi Accrual detector utility in:
-
-\begin{lstlisting}
-src/server/failure_detector.py
-\end{lstlisting}
-
-For heartbeat interval samples \(\Delta_k\), let \(F\) be the empirical or
-estimated cumulative distribution of heartbeat delays. If the last heartbeat
-arrived at \(t_{last}\), suspicion is:
+The Phi Accrual detector utility computes suspicion from heartbeat silence:
 
 \begin{equation}
 \phi(t)=-\log_{10}(1-F(t-t_{last})).
 \end{equation}
 
-When \(\phi(t)\geq \Phi_{threshold}\), the client is suspected. A common
-threshold is 8. This is more adaptive than a fixed timeout because suspicion
-depends on observed latency behavior.
+If \(\phi(t)\geq\Phi_{threshold}\), the client is suspected. The current system
+implements the detector utility and tests it, but it does not yet run a live
+heartbeat membership service inside Flower. This is an honest boundary of the
+prototype.
 
-The current prototype does not yet run a live heartbeat membership service in
-Flower. The honest implementation status is: round-level failure handling and
-checkpoint recovery are active; Phi Accrual is implemented as a reusable
-production extension point.
+\section{Implementation Details}
 
-\section{Evaluation}
+\subsection{Runtime Stack}
 
-The primary metrics are AUPRC, AUROC, and best-threshold F1. AUPRC is emphasized
-because fraud labels are imbalanced. Let \(P_k\) and \(R_k\) be precision and
-recall at threshold \(k\):
+The system uses Python, PyTorch, Flower, NumPy, Pandas, FastAPI, and React. The
+latest local training path uses Flower SuperLink/SuperNode style runtime for
+process-based experiments. The local SuperLink defaults to in-memory runtime
+state to avoid repeated SQLite lock failures during rapid local experiments.
+
+\subsection{Training Modes}
+
+There are three practical training modes:
+
+\begin{enumerate}
+  \item \textbf{3-client mode}: smallest reproducible baseline.
+  \item \textbf{10-client mode}: stronger scalability demonstration on one
+        machine while still keeping enough samples per client.
+  \item \textbf{100-client virtual mode}: keeps 100 client partitions but runs
+        them inside one Python process to avoid Windows page-file and DLL
+        loading limits from starting 100 PyTorch processes.
+\end{enumerate}
+
+The virtual path is important. It preserves federated partitioning and server
+aggregation logic, but removes operating-system process memory as the dominant
+failure source. This makes it a better local-machine test of algorithmic
+scalability.
+
+\subsection{Vietnam-Oriented Dataset Extension}
+
+The Vietnam extension is implemented in two layers. First, a custom adapter maps
+external columns to the project schema. Second, a synthetic generator creates
+Vietnam-style transactions for integration testing. Synthetic fields include
+provider, channel, amount in VND, customer id, merchant id, payer bank, receiver
+bank, device id, province, account age, short-window velocity, distance, and
+chargeback count.
+
+The role of this dataset is not to claim real Vietnam fraud accuracy. Its role
+is to prove that the pipeline can accept Vietnam-shaped transaction data and to
+prepare for a real anonymized partner dataset.
+
+\subsection{Inference Application}
+
+The API automatically selects the best compatible checkpoint for a configured
+model run. The GUI lets an operator score a transaction, compare reliable and
+suspicious examples, and inspect the decision threshold, selected model, USD
+amount, and currency conversion status. Currency conversion to USD is handled
+in the backend with fallback rates so the model input matches the training
+schema.
+
+\section{Evaluation and Experimental Results}
+
+\subsection{Metrics}
+
+The project reports AUPRC, AUROC, and F1. F1 is:
 
 \begin{equation}
-AUPRC = \sum_k (R_k-R_{k-1})P_k.
+F1=\frac{2PR}{P+R}.
 \end{equation}
 
-The target gate is:
+AUPRC approximates the area under the precision-recall curve:
+
+\begin{equation}
+AUPRC=\sum_k(R_k-R_{k-1})P_k.
+\end{equation}
+
+The deployment target is:
 
 \begin{equation}
 AUPRC\geq0.70,\quad AUROC\geq0.90,\quad F1\geq0.70.
 \end{equation}
 
-Existing 100-client results showed that the model can reach the target at a
-best round but can regress later if training continues. This motivated scalable
-aggregation, coverage-aware sampling, robust blending, update damping, and an
-adaptive client schedule that reduces learning rate and increases BCE stability
-when validation stalls or regresses. The comparison script
-\texttt{scripts/compare\_scalability\_runs.py} reports best metrics, latest
-metrics, target rounds, regressing rounds, and last-10-round variance.
+\subsection{Dataset Summary}
+
+The IEEE-CIS baseline contains 590,540 transactions with an approximate fraud
+rate of 3.5 percent. A recent 10-client processed split contains 59,054
+transactions per client. The client fraud rates range from about 2.02 percent
+to 4.32 percent, confirming that temporal client splits are non-IID.
+
+\subsection{Training Results}
+
+Table~\ref{tab:results} reports the available local artifacts at the time of
+writing. The 10-client result comes from \texttt{results/10\_clients/}. The
+100-client result comes from the scalability comparison artifact and is included
+because it demonstrates the key scalability issue: the best round met the target
+but later rounds regressed.
+
+\begin{table}[t]
+\caption{Available Training Artifacts}
+\label{tab:results}
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Run} & \textbf{Round} & \textbf{AUPRC} & \textbf{AUROC} & \textbf{F1} \\
+\midrule
+10 clients latest/best & 100 & 0.7106 & 0.9431 & 0.7025 \\
+100 clients best & 44 & 0.7068 & 0.9373 & 0.7248 \\
+100 clients latest & 100 & 0.6688 & n/a & 0.6903 \\
+Virtual smoke & 1 & 0.4179 & 0.8954 & 0.4887 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 10-client run satisfies the target at round 100. The 100-client comparison
+shows a different lesson: the model can reach the target, but the final model
+can be worse than the best checkpoint. This supports the added design decisions:
+best-checkpoint selection, adaptive recovery, robust aggregation, update
+stabilization, and training summaries that distinguish latest and best rounds.
+
+\subsection{Scalability Interpretation}
+
+Scalability is not the same as automatic metric improvement. If the same fixed
+dataset is split into more clients, each client receives fewer fraud examples.
+This increases variance in local training and validation. Therefore, the
+reasonable scalability goal is:
+
+\begin{equation}
+\text{more clients} \Rightarrow
+\text{stable rounds, broad coverage, bounded regression, recoverable failures}.
+\end{equation}
+
+Linear metric improvement requires more total data, such as real data from more
+Vietnam banks, wallets, gateways, or merchants. Splitting the same IEEE-CIS data
+into 100 clients is useful for stress testing the algorithm, but it does not
+create new fraud behavior.
+
+\subsection{Zero-Shot and Cross-Dataset Evaluation}
+
+The codebase includes zero-shot external evaluation for datasets such as PaySim,
+credit-card fraud datasets, BAF, and Vietnam synthetic data. The correct method
+is:
+
+\begin{enumerate}
+  \item inspect the external dataset columns, row count, fraud ratio, and entity
+        identifiers;
+  \item reconstruct only the compatible features;
+  \item reuse the IEEE-CIS scaler without re-fitting;
+  \item run inference only, with no gradient updates;
+  \item report AUPRC and recall at fixed precision.
+\end{enumerate}
+
+Large drops in zero-shot performance should not be hidden. They are evidence of
+domain shift and justify the next research step: acquiring real Vietnam partner
+data or generating stronger synthetic pretraining data that is clearly labeled
+as synthetic.
+
+\subsection{Fault-Tolerance Evaluation}
+
+The implemented recovery path can be evaluated by interrupting training,
+restarting from the latest compatible checkpoint, and verifying that round
+metadata, model parameters, and training summaries continue under the same run
+folder. Unit tests also cover the Phi Accrual failure detector behavior.
+
+\section{Teamwork}
+
+Table~\ref{tab:teamwork} gives a detailed workload split. Names should be
+updated before final submission if the project has more than one member.
+
+\begin{table*}[t]
+\caption{Team Member Contributions}
+\label{tab:teamwork}
+\centering
+\begin{tabular}{p{0.16\textwidth}p{0.64\textwidth}p{0.10\textwidth}}
+\toprule
+\textbf{Member} & \textbf{Contribution} & \textbf{Workload} \\
+\midrule
+Member A & Designed and implemented the federated learning server path, target-aware robust aggregation, update stabilization, checkpoint management, 10/100-client scalability configuration, Flower runtime scripts, fault-tolerance documentation, and IEEE report. & 55\% \\
+Member B & Implemented or supported data preprocessing, feature inspection, GUI/API demonstration, transaction examples, experiment execution, result collection, presentation preparation, and validation of the user-facing workflow. & 45\% \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{Discussion}
+
+The project answers the main distributed-system questions as follows.
+
+\subsection{What happens if the central server crashes?}
+
+The server persists per-round checkpoints. After a crash, it reloads the latest
+schema-compatible checkpoint and resumes from that global model. This is
+checkpoint-based recovery. The algorithm is the maximum compatible checkpoint
+selection:
+
+\begin{equation}
+r^*=\max\{r\mid C_r \in \mathcal{C},\operatorname{schema}(C_r)=S\}.
+\end{equation}
+
+\subsection{How are fault tolerance and scalability handled?}
+
+Fault tolerance is handled by round-level failure handling, successful-client
+aggregation, checkpointing, and restart recovery. Scalability is handled by
+coverage-aware sampling, virtual 100-client training, robust aggregation,
+adaptive schedules, and run-specific output folders.
+
+\subsection{What if one connection fails?}
+
+If enough clients still respond, the round aggregates the successful results and
+logs the failure. A production system would add live membership monitoring using
+Phi Accrual or SWIM so the server can distinguish slow clients from failed
+clients before scheduling future work.
+
+\subsection{How is unfinished work reassigned?}
+
+In federated learning, the unit of work is a round assignment, not a password
+range. If a client fails during round \(r\), its update is excluded and the next
+round samples another client. The equivalent reassignment rule is:
+
+\begin{equation}
+S_{r+1}=\operatorname{Sample}(\mathcal{A}_r \setminus \mathcal{F}_r),
+\end{equation}
+
+where \(\mathcal{A}_r\) is the available client set and \(\mathcal{F}_r\) is
+the suspected failed set. No completed global state is lost because the previous
+checkpoint remains valid.
+
+\subsection{How does the server verify a result is not fake?}
+
+The current prototype validates shape, schema, and metric consistency, then
+uses robust aggregation to reduce outlier influence. It does not yet implement
+cryptographic proof or secure aggregation. A production extension should add
+signed client updates, secure aggregation, differential privacy if required,
+and stronger Byzantine defenses.
 
 \section{Limitations and Future Work}
 
-The main limitations are:
+The largest limitation is dataset realism. IEEE-CIS is a strong public baseline,
+but it is not Vietnam-specific. The synthetic Vietnam generator is useful for
+pipeline testing, not for final accuracy claims. The next important step is an
+anonymized Vietnam partner dataset with transaction time, amount, fraud label,
+customer or account id, merchant id, device id, channel, and region.
 
-\begin{itemize}
-  \item IEEE-CIS remains the only real labeled training dataset.
-  \item Synthetic Vietnam data is not a substitute for real partner data.
-  \item Virtual 100-client training is a local-machine scalability experiment,
-        not a network deployment.
-  \item Phi Accrual is implemented as a utility but not yet integrated into a
-        live membership subsystem.
-  \item Secure aggregation, differential privacy, and stronger poisoning
-        defenses remain future work.
-\end{itemize}
+The second limitation is live fault detection. Phi Accrual is implemented as a
+utility, but live heartbeat membership is not yet integrated into the Flower
+runtime. The production design should add a membership service that tracks
+heartbeats, computes \(\phi(t)\), removes suspected clients from scheduling,
+and allows them to rejoin after recovery.
 
-Future work should prioritize an anonymized Vietnam partner dataset, live
-membership monitoring with Phi or SWIM, secure aggregation, stronger poisoning
-defenses, and experiments where total data increases with client count.
+The third limitation is adversarial robustness. Robust blending reduces noisy
+updates, but it is not a complete defense against malicious clients. Future work
+should evaluate Krum, coordinate median, trimmed mean, signed updates, anomaly
+scoring on update vectors, secure aggregation, and differential privacy.
 
 \section{Conclusion}
 
-The project evolved from a three-client IEEE-CIS federated fraud prototype into
-a more complete research system. It now has a path for Vietnam-style data,
-scalable 100-client local experiments, target-aware robust aggregation,
-checkpoint recovery, drift support, and a Phi Accrual detector utility. The most
-important conclusion is that scalability must be evaluated honestly: more client
-partitions increase operational complexity and statistical variance unless more
-total data is also available. The current implementation provides the foundation
-for that next phase.
+This project implements a federated fraud detection system with a practical
+training pipeline, explicit server aggregation algorithm, transaction-screening
+application, Vietnam-oriented data extension, checkpoint recovery, and a path
+toward 100-client scalability. The strongest current result is the 10-client
+artifact that reaches AUPRC 0.7106, AUROC 0.9431, and F1 0.7025. The 100-client
+artifact shows why scalability is a real research problem: the best round can
+meet the target while later rounds regress. The final direction is clear:
+collect or partner for Vietnam transaction data, integrate live failure
+membership, strengthen aggregation security, and evaluate scalability with more
+total data rather than only more partitions.
 
 \begin{thebibliography}{00}
 
@@ -368,31 +677,42 @@ H. B. McMahan, E. Moore, D. Ramage, S. Hampson, and B. A. y Arcas,
 ``Communication-efficient learning of deep networks from decentralized data,''
 in \emph{Proc. AISTATS}, 2017.
 
-\bibitem{qffl}
-T. Li, M. Sanjabi, A. Beirami, and V. Smith,
-``Fair resource allocation in federated learning,'' in \emph{Proc. ICLR}, 2020.
+\bibitem{flowerstrategy}
+Flower AI, ``Use a federated learning strategy.'' [Online]. Available:
+\url{https://flower.ai/docs/framework/tutorial-series-use-a-federated-learning-strategy-pytorch.html}
+
+\bibitem{flowerdocs}
+Flower AI, ``Flower Framework Documentation.'' [Online]. Available:
+\url{https://flower.ai/docs/framework/index.html}
+
+\bibitem{prroc}
+J. Davis and M. Goadrich, ``The relationship between Precision-Recall and ROC
+curves,'' in \emph{Proc. ICML}, 2006, pp. 233--240.
 
 \bibitem{resnet}
-K. He, X. Zhang, S. Ren, and J. Sun,
-``Deep residual learning for image recognition,'' in \emph{Proc. CVPR}, 2016.
+K. He, X. Zhang, S. Ren, and J. Sun, ``Deep residual learning for image
+recognition,'' in \emph{Proc. CVPR}, 2016.
 
 \bibitem{layernorm}
-J. L. Ba, J. R. Kiros, and G. E. Hinton,
-``Layer normalization,'' arXiv:1607.06450, 2016.
+J. L. Ba, J. R. Kiros, and G. E. Hinton, ``Layer normalization,''
+arXiv:1607.06450, 2016.
 
 \bibitem{phi}
-N. Hayashibara, X. Defago, R. Yared, and T. Katayama,
-``The phi accrual failure detector,'' in \emph{Proc. SRDS}, 2004.
+N. Hayashibara, X. Defago, R. Yared, and T. Katayama, ``The phi accrual
+failure detector,'' in \emph{Proc. SRDS}, 2004.
 
 \bibitem{swim}
-A. Das, I. Gupta, and A. Motivala,
-``SWIM: Scalable weakly-consistent infection-style process group membership
-protocol,'' in \emph{Proc. DSN}, 2002.
+A. Das, I. Gupta, and A. Motivala, ``SWIM: Scalable weakly-consistent
+infection-style process group membership protocol,'' in \emph{Proc. DSN}, 2002.
 
 \bibitem{krum}
-P. Blanchard, E. M. El Mhamdi, R. Guerraoui, and J. Stainer,
-``Machine learning with adversaries: Byzantine tolerant gradient descent,'' in
-\emph{Proc. NeurIPS}, 2017.
+P. Blanchard, E. M. El Mhamdi, R. Guerraoui, and J. Stainer, ``Machine learning
+with adversaries: Byzantine tolerant gradient descent,'' in \emph{Proc.
+NeurIPS}, 2017.
+
+\bibitem{byzantine}
+D. Yin, Y. Chen, R. Kannan, and P. Bartlett, ``Byzantine-robust distributed
+learning: Towards optimal statistical rates,'' in \emph{Proc. ICML}, 2018.
 
 \bibitem{targetencoding}
 D. Micci-Barreca, ``A preprocessing scheme for high-cardinality categorical
@@ -400,20 +720,20 @@ attributes in classification and prediction problems,'' \emph{SIGKDD Explor.
 Newsl.}, vol. 3, no. 1, pp. 27--32, 2001.
 
 \bibitem{ieeecis}
-IEEE-CIS Fraud Detection, Kaggle competition dataset.
-[Online]. Available: \url{https://www.kaggle.com/competitions/ieee-fraud-detection}
+IEEE-CIS Fraud Detection, Kaggle competition dataset. [Online]. Available:
+\url{https://www.kaggle.com/competitions/ieee-fraud-detection}
 
 \bibitem{momo}
-MoMo Developers, ``One-time payment API documentation.'' [Online].
-Available: \url{https://developers.momo.vn/}
+MoMo Developers, ``MoMo Developers documentation.'' [Online]. Available:
+\url{https://developers.momo.vn/v3/}
 
 \bibitem{vnpay}
-VNPAY Sandbox, ``Payment API documentation.'' [Online].
-Available: \url{https://sandbox.vnpayment.vn/apis/docs/}
+VNPAY Sandbox, ``Payment API documentation.'' [Online]. Available:
+\url{https://sandbox.vnpayment.vn/apis/docs/}
 
 \bibitem{napas}
-NAPAS, ``Payment and transfer services.'' [Online].
-Available: \url{https://en.napas.com.vn/}
+NAPAS, ``National Payment Corporation of Vietnam.'' [Online]. Available:
+\url{https://en.napas.com.vn/}
 
 \end{thebibliography}
 

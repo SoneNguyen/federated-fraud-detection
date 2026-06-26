@@ -25,6 +25,7 @@ src/client/client.py                  Flower client training/evaluation logic
 src/server/aggregation.py             Target-aware robust FedAvg and update stabilization
 src/server/strategy.py                Flower strategy, coverage sampling, monitoring
 src/server/failure_detector.py        Phi Accrual failure detector utility
+src/system/resilience.py              Cross-device runtime repair and preflight checks
 scripts/run_server.py                 Federated server entry point
 scripts/run_client.py                 Single client entry point
 scripts/launch_clients.py             Multi-process network client launcher
@@ -235,6 +236,7 @@ checkpoint per global round
 resume from compatible checkpoint
 drift alert rollback helper
 run-specific output folders
+runtime repair for ports, stale Flower DBs, stale data, and client restarts
 ```
 
 Checkpoint files:
@@ -261,6 +263,30 @@ phi(t) = -log10(1 - F(t - t_last))
 Current Flower training does not yet run a heartbeat membership service. The
 honest statement is: round-level failure handling is implemented; Phi Accrual is
 implemented as a tested utility and is the production membership extension.
+
+## Cross-Device Resilience
+
+The normal training entry points call `src/system/resilience.py` before starting
+Flower or clients. This protects the project against common teammate-machine
+failures:
+
+```text
+stale or incompatible Flower SQLite DB -> archive it and start clean
+locked incompatible Flower SQLite DB    -> fall forward to a fresh sibling DB
+busy Flower ports                       -> orchestrator chooses nearby free ports
+busy client AppIO port                  -> client chooses a nearby free port
+missing or stale processed data         -> rebuild from raw IEEE-CIS when present
+client process crash                    -> launcher restarts it up to the limit
+missing runtime command                 -> fail early with a precise install message
+unhandled runtime setup failure         -> write outputs/runtime/last_failure.md
+```
+
+This is inside the existing runtime commands, not a separate operator script.
+The recommended portable command is:
+
+```powershell
+uv run python -m scripts.run_local_flower --num-clients 10 --rounds 100 --model-run 10_clients
+```
 
 ## Inference Application
 
