@@ -9,6 +9,40 @@ npm install
 cd ..
 ```
 
+## Local Files Not Stored In Git
+
+Before training or running the API on another machine, verify these local-only
+assets. They are intentionally ignored because they are large, generated, or
+machine-specific.
+
+```text
+dataset/ieee_cis/train_transaction.csv       raw IEEE-CIS transaction file
+dataset/ieee_cis/train_identity.csv          raw IEEE-CIS identity file
+dataset/processed/client_*/...parquet        generated processed client splits
+config/normalization_params.json             generated scaler used by training/API
+outputs/checkpoints/<run>/round_*.pt         trained checkpoints
+results/<run>/                               training metrics and model ranking
+outputs/runtime/                             local Flower/runtime state
+app/node_modules/                            frontend packages from npm install
+.venv/                                       Python environment from uv sync
+.env or .env.local                           optional local secrets/settings
+```
+
+Minimum checklist:
+
+```powershell
+Test-Path dataset\ieee_cis\train_transaction.csv
+Test-Path dataset\ieee_cis\train_identity.csv
+Test-Path config\normalization_params.json
+Test-Path app\node_modules
+```
+
+If raw IEEE-CIS files exist but processed data is missing or stale, the normal
+training launcher can rebuild processed data automatically. If checkpoints are
+missing, train first or copy a compatible `round_*.pt` folder from the machine
+that produced it. Do not expect `dataset/processed`, `outputs/checkpoints`, or
+`results` to appear after `git pull`.
+
 ## Prepare IEEE-CIS
 
 Place raw files at:
